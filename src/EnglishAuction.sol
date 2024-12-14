@@ -3,8 +3,26 @@ pragma solidity 0.8.28;
 
 /**
  * @title EnglishAuction
- * @notice Implements a standard English auction with a reserve price and a predefined end time, plus optional anti-sniping time extensions.
- * @dev Designed to be extended. Provides hooks to customize bid validation, increments, and asset transfers.
+ * @notice Implements a standard English auction mechanism for a single asset, with:
+ *         - A reserve price (the minimum bid required to start winning the asset).
+ *         - A fixed duration that can be extended if a bid is placed near the end ("anti-sniping" feature).
+ *         - Refunds for outbid participants.
+ *         - Extensible hooks and internal functions allowing you to customize increments,
+ *           whitelists, and how the asset is transferred.
+ *
+ * @dev
+ * This contract is designed to be inherited and extended.
+ * - Optional anti-sniping mechanism: If a bid arrives close to the end, the auction is extended.
+ *   If you don't want to extend the auction in the case of a last minute bid, set the `extensionThreshold` or `extensionPeriod` to 0.
+ *
+ * To use this contract, you must:
+ * 1. Provide an implementation of `_transferAssetToWinner(address winner)` that transfers the
+ *    auctioned asset (e.g., an NFT) to the auction winner.
+ * 2. Optionally override `_beforeBid` or `_afterBid` to implement custom bidding logic such as
+ *    whitelisting or additional checks.
+ * 3. Optionally override `_validateBidIncrement` if you want to require a certain increment over the previous highest bid.
+ *
+ * If no valid bids are placed above the reserve price by the time the auction ends, anyone can simply finalize the auction and no asset will be transferred.
  */
 abstract contract EnglishAuction {
     /// @dev The address of the item’s seller
@@ -14,6 +32,7 @@ abstract contract EnglishAuction {
     uint256 private endTime;
 
     /// @dev The current highest bid amount
+    ///      This is set to the reserve price at constuction time
     uint256 private highestBid;
 
     /// @dev The address of the highest bidder
@@ -22,7 +41,7 @@ abstract contract EnglishAuction {
     /// @dev Indicates if the auction has been finalized
     bool private finalized;
 
-    /// @dev Mapping of addresses to refunds they can withdraw
+    /// @dev Mapping of addresses to refunds they can withdraw (due to being outbid).
     mapping(address bidder => uint256 amount) private refunds;
 
     // -------------------------
@@ -32,18 +51,41 @@ abstract contract EnglishAuction {
     /// @dev If a bid is placed within `extensionThreshold` seconds of the endTime,
     ///         the auction endTime is extended by `extensionPeriod` seconds.
     ///         If you don't want to extend the auction in the case of a last minute bid, set this to 0.
-    ///         But it is highly recommended to have some extension period, as it will discourage sniping.
+    ///         But it is highly recommended to have some extension period, as it will discourage last minute sniping.
     uint256 private immutable extensionThreshold;
     uint256 private immutable extensionPeriod;
 
     /// @dev Accumulated proceeds for the seller to withdraw after finalization.
     uint256 private sellerProceeds;
 
+    /// @notice Emitted when the auction starts.
+    /// @param seller The address of the seller.
+    /// @param reservePrice The initial reserve price.
+    /// @param endTime The scheduled end time of the auction.
     event AuctionStarted(address indexed seller, uint256 reservePrice, uint256 endTime);
+
+    /// @notice Emitted when a new highest bid is placed.
+    /// @param bidder The address of the new highest bidder.
+    /// @param amount The amount of the bid.
     event NewHighestBid(address indexed bidder, uint256 amount);
+
+    /// @notice Emitted when the auction is finalized.
+    /// @param winner The address of the winner (highest bidder).
+    /// @param amount The winning bid amount.
     event AuctionFinalized(address indexed winner, uint256 amount);
+
+    /// @notice Emitted when a refund becomes available for a previously outbid bidder.
+    /// @param bidder The address that can withdraw the refund.
+    /// @param amount The amount of the refund.
     event RefundAvailable(address indexed bidder, uint256 amount);
+
+    /// @notice Emitted when funds (refunds or seller proceeds) are withdrawn.
+    /// @param recipient The address that received the withdrawn funds.
+    /// @param amount The amount withdrawn.
     event FundsWithdrawn(address indexed recipient, uint256 amount);
+
+    /// @notice Emitted when the auction is extended due to a last-minute bid.
+    /// @param newEndTime The new end time of the auction.
     event AuctionExtended(uint256 newEndTime);
 
     error AuctionAlreadyFinalized();
@@ -85,10 +127,12 @@ abstract contract EnglishAuction {
     }
 
     /**
-     * @param _reservePrice The minimum bid required to start winning
-     * @param _duration The number of seconds from now until the auction ends
-     * @param _extensionThreshold If a bid is placed within this many seconds of the end, time is extended
-     * @param _extensionPeriod How many seconds to extend the auction by when triggered
+     * @notice Creates a new English auction.
+     * @param _seller The address of the seller.
+     * @param _reservePrice The reserve price that must be met or exceeded for the auction to produce a sale.
+     * @param _duration The duration (in seconds) from now until the auction ends.
+     * @param _extensionThreshold If a bid is placed within this many seconds of the end, time is extended.
+     * @param _extensionPeriod How many seconds to extend the auction by when triggered.
      */
     constructor(
         address _seller,
@@ -114,6 +158,8 @@ abstract contract EnglishAuction {
      * @notice Place a bid higher than the current highest bid, respecting the reserve price.
      * @dev Uses a withdrawal pattern for previous highest bidder refunds.
      *      This means that withdraws for other bidders are not executed automatically.
+     *
+     * @custom:hook `_beforeBid` and `_afterBid` can be overridden for custom logic.
      */
     function placeBid() external payable virtual auctionOngoing {
         _beforeBid(msg.sender, msg.value);
@@ -140,6 +186,7 @@ abstract contract EnglishAuction {
 
     /**
      * @notice Withdraw refunds owed to the caller due to being outbid.
+     * @dev Reverts if no refund is available.
      */
     function withdrawRefund() external {
         uint256 amount = refunds[msg.sender];
@@ -173,8 +220,11 @@ abstract contract EnglishAuction {
     }
 
     /**
-     * @notice Finalizes the auction, transferring funds to the seller and the asset to the winner.
-     * @dev Anyone can call it after the auction ends.
+     * @notice Finalizes the auction after it ends, transfering the asset to the winner and allowing the seller to withdraw the highest bid.
+     * @dev Anyone can call this after the auction has ended.
+     *      If no valid bids above the reserve were placed, no transfer occurs and sellerProceeds remains zero.
+     *      You need to override `_transferAssetToWinner` to implement the asset transfer logic.
+     *      Funds are not transferred automatically to the seller, they need to call `withdrawSellerProceeds`.
      */
     function finalizeAuction() external virtual notFinalized auctionEnded {
         finalized = true;
@@ -191,22 +241,36 @@ abstract contract EnglishAuction {
 
     // -------------------------
     // Public View Functions
-    // These functions are primarily intended for external contracts,
-    // but can also be helpful for contracts that extend EnglishAuction.
     // -------------------------
 
+    /**
+     * @notice Gets the scheduled end time of the auction.
+     * @return The timestamp in seconds at which the auction ends.
+     */
     function getEndTime() public view returns (uint256) {
         return endTime;
     }
 
+    /**
+     * @notice Gets the current highest bid.
+     * @return The amount of the highest bid.
+     */
     function getHighestBid() public view returns (uint256) {
         return highestBid;
     }
 
+    /**
+     * @notice Gets the current highest bidder.
+     * @return The address of the highest bidder.
+     */
     function getHighestBidder() public view returns (address) {
         return highestBidder;
     }
 
+    /**
+     * @notice Checks if the auction has been finalized.
+     * @return True if finalized, false otherwise.
+     */
     function isFinalized() public view returns (bool) {
         return finalized;
     }
@@ -217,8 +281,10 @@ abstract contract EnglishAuction {
 
     /**
      * @dev Hook that runs before a bid is processed.
-     *      Useful for additional checks or whitelisting.
-     *      By default, it does nothing.
+     *      Override to implement custom checks (e.g. whitelists, paused states, etc).
+     *      By default, does nothing.
+     * @param bidder The address placing the bid.
+     * @param amount The amount of the bid.
      */
     function _beforeBid(address bidder, uint256 amount) internal virtual {
         // No-op: override to implement custom checks (e.g. whitelists, pause checks)
@@ -226,7 +292,10 @@ abstract contract EnglishAuction {
 
     /**
      * @dev Hook that runs after a bid is processed.
-     *      Can be used to issue token rewards to bidders, emit events, or any other custom logic.
+     *      Override to implement custom logic (e.g. token rewards, additional event logging).
+     *      By default, does nothing.
+     * @param bidder The address that placed the bid.
+     * @param amount The amount of the bid.
      */
     function _afterBid(address bidder, uint256 amount) internal virtual {
         // No-op: override to implement custom logic after bidding
@@ -236,6 +305,14 @@ abstract contract EnglishAuction {
      * @dev Checks if the provided bid meets the increment requirements.
      *      By default, requires bid > highestBid.
      *      Override to impose specific increments (e.g. 5% higher than current highestBid).
+     *      ```solidity
+     *       function _validateBidIncrement(uint256 newBid) internal view override {
+     *           uint256 currentHighest = getHighestBid();
+     *            if (newBid <= currentHighest * 105 / 100) {
+     *               revert BidNotHighEnough(newBid, currentHighest))
+     *           }
+     *       }
+     *      ```
      *      Requiring specific increments can help prevent gas wars, where there's a bidder
      *      that just slightly increments the bid every time.
      */
