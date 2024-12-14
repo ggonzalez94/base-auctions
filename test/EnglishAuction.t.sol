@@ -19,6 +19,8 @@ contract MockEnglishAuction is EnglishAuction {
         uint256 _extensionPeriod
     ) EnglishAuction(_seller, _reservePrice, _duration, _extensionThreshold, _extensionPeriod) {}
 
+    // Here you would normally transfer the actual asset to the winner(e.g. the NFT)
+    // For testing purposes, we just set the winnerAssetRecipient to the winner
     function _transferAssetToWinner(address winner) internal override {
         winnerAssetRecipient = winner;
     }
@@ -75,7 +77,6 @@ contract EnglishAuctionTest is Test {
 
         vm.deal(bidder1, 10 ether);
         vm.deal(bidder2, 10 ether);
-        vm.deal(seller, 0); // seller starts with zero for clarity
         vm.deal(randomUser, 1 ether);
     }
 
@@ -226,207 +227,159 @@ contract EnglishAuctionTest is Test {
     }
 
     // //////////////////////////
-    // // Auction End Behavior //
+    // // Finalize Auction //
     // //////////////////////////
 
-    // function test_placeBid_RevertWhen_AuctionEnded() external {
-    //     // Fast-forward to after the auction ends
-    //     vm.warp(block.timestamp + duration + 1);
+    function test_finalizeAuction_TransfersAssetToWinner() external {
+        vm.prank(bidder1);
+        auction.placeBid{value: 2 ether}();
 
-    //     vm.startPrank(bidder1);
-    //     vm.expectRevert(EnglishAuction.AuctionEnded.selector);
-    //     auction.placeBid{value: 2 ether}();
-    //     vm.stopPrank();
-    // }
+        vm.warp(block.timestamp + duration + 1);
+        auction.finalizeAuction();
 
-    // function test_finalizeAuctionTransfersFundsAndAssetsWithWinner() external {
-    //     // Bidder1 places a bid
-    //     vm.prank(bidder1);
-    //     auction.placeBid{value: 2 ether}();
+        assertEq(auction.winnerAssetRecipient(), bidder1, "Asset should be transferred to bidder1");
+    }
 
-    //     // Move past end
-    //     vm.warp(block.timestamp + duration + 1);
+    function test_finalizeAuction_RevertWhen_AuctionNotYetEnded() external {
+        vm.prank(bidder1);
+        auction.placeBid{value: 2 ether}();
 
-    //     uint256 sellerBalanceBefore = seller.balance;
-    //     auction.finalizeAuction();
-    //     uint256 sellerBalanceAfter = seller.balance;
+        vm.expectRevert(EnglishAuction.AuctionNotYetEnded.selector);
+        auction.finalizeAuction();
+    }
 
-    //     assertEq(sellerBalanceAfter, sellerBalanceBefore + 2 ether, "Seller should receive funds");
-    //     assertEq(auction.winnerAssetRecipient(), bidder1, "Winner should receive the asset");
-    // }
+    function test_finalizeAuctionWorksWithNoBids() external {
+        // No one bids, just end the auction
+        vm.warp(block.timestamp + duration + 1);
 
-    // function test_finalizeAuction_RevertWhen_AuctionNotYetEnded() external {
-    //     vm.prank(bidder1);
-    //     auction.placeBid{value: 2 ether}();
+        // finalize
+        auction.finalizeAuction();
 
-    //     vm.expectRevert(EnglishAuction.AuctionNotYetEnded.selector);
-    //     auction.finalizeAuction();
-    // }
+        bool isFinalized = auction.isFinalized();
+        assertEq(isFinalized, true, "Auction should be finalized");
+        // No winner
+        assertEq(auction.winnerAssetRecipient(), address(0), "No winner if no bids");
+    }
 
-    // function test_finalizeAuctionWorksWithNoBids() external {
-    //     // No one bids, just end the auction
-    //     vm.warp(block.timestamp + duration + 1);
+    function test_finalizeAuction_RevertWhen_AlreadyFinalized() external {
+        vm.prank(bidder1);
+        auction.placeBid{value: 2 ether}();
 
-    //     // finalize
-    //     auction.finalizeAuction();
+        vm.warp(block.timestamp + duration + 1);
+        auction.finalizeAuction();
 
-    //     // Seller gets nothing, no winner
-    //     // Just ensuring no revert and no changes
-    //     assertEq(auction.winnerAssetRecipient(), address(0), "No winner if no bids");
-    //     // Seller had no funds, should remain with no increase
-    //     assertEq(seller.balance, 0, "Seller gets no funds if no bids");
-    // }
-
-    // function test_finalizeAuction_RevertWhen_AlreadyFinalized() external {
-    //     vm.prank(bidder1);
-    //     auction.placeBid{value: 2 ether}();
-
-    //     vm.warp(block.timestamp + duration + 1);
-    //     auction.finalizeAuction();
-
-    //     vm.expectRevert(EnglishAuction.AuctionAlreadyFinalized.selector);
-    //     auction.finalizeAuction();
-    // }
+        vm.expectRevert(EnglishAuction.AuctionAlreadyFinalized.selector);
+        auction.finalizeAuction();
+    }
 
     // //////////////////////////
     // // Anti-Sniping Tests   //
     // //////////////////////////
 
-    // function test_placeBidExtendsAuctionNearEnd() external {
-    //     // Move close to the end
-    //     vm.warp(block.timestamp + duration - (extensionThreshold - 1));
+    function test_placeBidExtendsAuctionNearEnd() external {
+        // Move close to the end
+        uint256 endTimeBefore = auction.getEndTime();
+        vm.warp(endTimeBefore - (extensionThreshold - 1));
 
-    //     // Place a bid to trigger extension
-    //     vm.prank(bidder1);
-    //     auction.placeBid{value: 2 ether}();
+        // Place a bid to trigger extension
+        vm.prank(bidder1);
+        auction.placeBid{value: 2 ether}();
 
-    //     uint256 newEndTime = auction.getEndTime();
-    //     uint256 expectedEndTime = block.timestamp + extensionPeriod;
-    //     assertEq(newEndTime, expectedEndTime, "Should extend the auction end time");
-    // }
+        uint256 endTimeAfter = auction.getEndTime();
+        assertEq(endTimeAfter, endTimeBefore + extensionPeriod, "Should extend the auction end time");
+    }
 
-    // function test_placeBidDoesNotExtendWhenNotWithinThreshold() external {
-    //     // Warp well before threshold
-    //     vm.warp(block.timestamp + duration - extensionThreshold - 1000);
+    function test_placeBidDoesNotExtendWhenNotWithinThreshold() external {
+        // Warp at the threshold(should not extend)
+        uint256 endTimeBefore = auction.getEndTime();
+        vm.warp(endTimeBefore - extensionThreshold);
 
-    //     // Place a bid
-    //     vm.prank(bidder1);
-    //     auction.placeBid{value: 2 ether}();
+        // Place a bid
+        vm.prank(bidder1);
+        auction.placeBid{value: 2 ether}();
 
-    //     // Should not extend
-    //     uint256 endTimeAfter = auction.getEndTime();
-    //     assertEq(endTimeAfter, 1000 + duration, "No extension should occur");
-    // }
+        // Should not extend
+        uint256 endTimeAfter = auction.getEndTime();
+        assertEq(endTimeAfter, endTimeBefore, "No extension should occur");
+    }
 
-    // function test_noExtensionIfThresholdIsZero() external {
-    //     // Deploy a new auction with zero threshold
-    //     MockEnglishAuction noExtendAuction = new MockEnglishAuction(seller, reservePrice, duration, 0, extensionPeriod);
+    function test_placeBidDoesNotExtendWhenThresholdIsZero() external {
+        // Deploy a new auction with zero threshold
+        MockEnglishAuction noExtendAuction = new MockEnglishAuction(seller, reservePrice, duration, 0, extensionPeriod);
+        uint256 endTimeBefore = noExtendAuction.getEndTime();
 
-    //     vm.deal(bidder1, 5 ether);
-    //     // Warp close to end
-    //     vm.warp(block.timestamp + duration - 1);
+        // Warp close to end
+        vm.warp(endTimeBefore - 1);
 
-    //     vm.prank(bidder1);
-    //     noExtendAuction.placeBid{value: 2 ether}();
+        vm.prank(bidder1);
+        noExtendAuction.placeBid{value: 2 ether}();
 
-    //     // Check no extension
-    //     uint256 endTimeAfter = noExtendAuction.getEndTime();
-    //     assertEq(endTimeAfter, 1000 + duration, "No extension if threshold is zero");
-    // }
+        // Check no extension
+        uint256 endTimeAfter = noExtendAuction.getEndTime();
+        assertEq(endTimeAfter, endTimeBefore, "No extension if threshold is zero");
+    }
+
+    function test_placeBidDoesNotExtendWhenExtensionPeriodIsZero() external {
+        // Deploy a new auction with zero extension period
+        MockEnglishAuction noExtendAuction =
+            new MockEnglishAuction(seller, reservePrice, duration, extensionThreshold, 0);
+        uint256 endTimeBefore = noExtendAuction.getEndTime();
+
+        // Warp close to end
+        vm.warp(endTimeBefore - 1);
+
+        vm.prank(bidder1);
+        noExtendAuction.placeBid{value: 2 ether}();
+
+        // Check no extension
+        uint256 endTimeAfter = noExtendAuction.getEndTime();
+        assertEq(endTimeAfter, endTimeBefore, "No extension if extension period is zero");
+    }
 
     // //////////////////////////
     // // Increment Tests      //
     // //////////////////////////
 
-    // function test_placeBidWithIncrementRequirement() external {
-    //     // Deploy auction with increments (e.g. 10% increment)
-    //     MockEnglishAuctionWithIncrement incrementAuction = new MockEnglishAuctionWithIncrement(
-    //         seller,
-    //         reservePrice,
-    //         duration,
-    //         extensionThreshold,
-    //         extensionPeriod,
-    //         10 // 10% increment
-    //     );
-    //     vm.deal(bidder1, 10 ether);
-    //     vm.deal(bidder2, 10 ether);
+    function test_placeBidWithIncrement_RevertWhen_BidNotHighEnough() external {
+        // Deploy auction with 10 % increment requirement
+        MockEnglishAuctionWithIncrement incrementAuction = new MockEnglishAuctionWithIncrement(
+            seller,
+            reservePrice,
+            duration,
+            extensionThreshold,
+            extensionPeriod,
+            10 // 10% increment
+        );
 
-    //     // Bidder1 places a bid of 2 ether (reserve: 1 ether, 2 is valid)
-    //     vm.prank(bidder1);
-    //     incrementAuction.placeBid{value: 2 ether}();
+        vm.prank(bidder1);
+        incrementAuction.placeBid{value: 2 ether}();
 
-    //     // Bidder2 tries to outbid with only 2.1 ether (less than 10% increment over 2 ether)
-    //     // 10% of 2 ether is 0.2 ether, so must be at least 2.2 ether
-    //     vm.prank(bidder2);
-    //     vm.expectRevert(abi.encodeWithSelector(EnglishAuction.BidNotHighEnough.selector, 2.1 ether, 2.2 ether));
-    //     incrementAuction.placeBid{value: 2.1 ether}();
+        // Bidder2 tries to outbid with only 2.1 ether (less than 10% increment over 2 ether)
+        // 10% of 2 ether is 0.2 ether, so must be at least 2.2 ether
+        vm.prank(bidder2);
+        vm.expectRevert(abi.encodeWithSelector(EnglishAuction.BidNotHighEnough.selector, 2.1 ether, 2.2 ether));
+        incrementAuction.placeBid{value: 2.1 ether}();
+    }
 
-    //     // Bidder2 places a valid bid (2.5 ether meets 10% increment)
-    //     vm.prank(bidder2);
-    //     incrementAuction.placeBid{value: 2.5 ether}();
+    function test_placeBidWithIncrement_Works() external {
+        // Deploy auction with 10 % increment requirement
+        MockEnglishAuctionWithIncrement incrementAuction = new MockEnglishAuctionWithIncrement(
+            seller,
+            reservePrice,
+            duration,
+            extensionThreshold,
+            extensionPeriod,
+            10 // 10% increment
+        );
 
-    //     assertEq(incrementAuction.getHighestBidder(), bidder2, "Bidder2 should now be highest bidder");
-    //     assertEq(incrementAuction.getHighestBid(), 2.5 ether, "Highest bid should be updated");
-    // }
+        vm.prank(bidder1);
+        incrementAuction.placeBid{value: 2 ether}();
 
-    // //////////////////////////
-    // // OnlySeller Tests     //
-    // //////////////////////////
+        // Bidder2 places a valid bid (2.5 ether meets 10% increment)
+        vm.prank(bidder2);
+        incrementAuction.placeBid{value: 2.5 ether}();
 
-    // function test_sellerOnlyFunction_RevertWhen_CallerIsNotSeller() external {
-    //     vm.prank(bidder1);
-    //     vm.expectRevert(abi.encodeWithSelector(EnglishAuction.OnlySellerCanCall.selector, bidder1));
-    //     auction.sellerOnlyFunction();
-    // }
-
-    // function test_sellerOnlyFunctionSucceedsWhenCalledBySeller() external {
-    //     vm.prank(seller);
-    //     auction.sellerOnlyFunction();
-    //     // No revert means success
-    // }
-
-    // //////////////////////////
-    // // Finalization Edge    //
-    // //////////////////////////
-
-    // function test_finalizeWhenNoBids() external {
-    //     // No bids were placed
-    //     vm.warp(block.timestamp + duration + 1);
-    //     auction.finalizeAuction();
-
-    //     assertEq(auction.winnerAssetRecipient(), address(0), "No winner if no bids");
-    //     assertEq(seller.balance, 0, "No funds for seller if no bids");
-    // }
-
-    // function test_finalizeAfterEndedWithBidsWorksMultipleTimes_RevertSecondTime() external {
-    //     vm.prank(bidder1);
-    //     auction.placeBid{value: 2 ether}();
-
-    //     vm.warp(block.timestamp + duration + 1);
-    //     auction.finalizeAuction();
-
-    //     // Trying to finalize again should revert
-    //     vm.expectRevert(EnglishAuction.AuctionAlreadyFinalized.selector);
-    //     auction.finalizeAuction();
-    // }
-
-    // function test_finalizeImmediatelyAfterEndWithNoExtension() external {
-    //     // Deploy a new auction with no extension
-    //     MockEnglishAuction noExtend = new MockEnglishAuction(
-    //         seller,
-    //         reservePrice,
-    //         duration,
-    //         0,
-    //         0 // no extension
-    //     );
-    //     vm.deal(bidder1, 5 ether);
-    //     vm.prank(bidder1);
-    //     noExtend.placeBid{value: 2 ether}();
-
-    //     vm.warp(block.timestamp + duration + 1);
-    //     noExtend.finalizeAuction();
-
-    //     assertEq(noExtend.winnerAssetRecipient(), bidder1, "Bidder1 should win");
-    //     assertEq(seller.balance, 2 ether, "Seller should receive funds");
-    // }
+        assertEq(incrementAuction.getHighestBidder(), bidder2, "Bidder2 should now be highest bidder");
+        assertEq(incrementAuction.getHighestBid(), 2.5 ether, "Highest bid should be updated");
+    }
 }

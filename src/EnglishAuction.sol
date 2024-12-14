@@ -156,7 +156,7 @@ abstract contract EnglishAuction {
 
     /**
      * @notice Allows the seller to withdraw their proceeds after the auction has been finalized.
-     * @dev The function is virtual to allow implementers to override it and implement custom logic if necessary.
+     * @dev Override to implement custom logic if necessary (e.g. sending the funds to a different address or burning them)
      *      When overriding, make sure to reset the sellerProceeds to 0 and add necessary access control.
      */
     function withdrawSellerProceeds() external virtual onlySeller auctionFinalized {
@@ -245,6 +245,7 @@ abstract contract EnglishAuction {
 
     /**
      * @dev Extends the auction if a bid is placed near the end.
+     *      This helps prevent last minute snipping.
      *      If `endTime - block.timestamp < extensionThreshold`, extend by `extensionPeriod`.
      */
     function _maybeExtendAuction() internal {
