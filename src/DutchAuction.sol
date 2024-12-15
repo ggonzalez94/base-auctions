@@ -29,7 +29,7 @@ abstract contract DutchAuction is ReentrancyGuard {
     uint256 internal immutable floorPrice;
 
     /// @notice The number of identical items available for sale
-    uint256 internal inventory;
+    uint256 private inventory;
 
     event AuctionStarted(
         address indexed seller,

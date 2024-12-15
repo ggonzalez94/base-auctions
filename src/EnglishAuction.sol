@@ -29,20 +29,20 @@ abstract contract EnglishAuction {
     address internal immutable seller;
 
     /// @dev Timestamp (in seconds) at which the auction ends
-    uint256 internal endTime;
+    uint256 private endTime;
 
     /// @dev The current highest bid amount
     ///      This is set to the reserve price at constuction time
-    uint256 internal highestBid;
+    uint256 private highestBid;
 
     /// @dev The address of the highest bidder
-    address internal highestBidder;
+    address private highestBidder;
 
     /// @dev Indicates if the auction has been finalized
-    bool internal finalized;
+    bool private finalized;
 
     /// @dev Mapping of addresses to refunds they can withdraw (due to being outbid).
-    mapping(address bidder => uint256 amount) internal refunds;
+    mapping(address bidder => uint256 amount) private refunds;
 
     // -------------------------
     // Anti-Sniping Variables (https://en.wikipedia.org/wiki/Auction_sniping)
@@ -52,11 +52,11 @@ abstract contract EnglishAuction {
     ///         the auction endTime is extended by `extensionPeriod` seconds.
     ///         If you don't want to extend the auction in the case of a last minute bid, set this to 0.
     ///         But it is highly recommended to have some extension period, as it will discourage last minute sniping.
-    uint256 internal immutable extensionThreshold;
-    uint256 internal immutable extensionPeriod;
+    uint256 private immutable extensionThreshold;
+    uint256 private immutable extensionPeriod;
 
     /// @dev Accumulated proceeds for the seller to withdraw after finalization.
-    uint256 internal sellerProceeds;
+    uint256 private sellerProceeds;
 
     /// @notice Emitted when the auction starts.
     /// @param seller The address of the seller.
