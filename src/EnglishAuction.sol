@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.28;
+pragma solidity ^0.8.20;
 
 /**
  * @title EnglishAuction
@@ -26,23 +26,23 @@ pragma solidity 0.8.28;
  */
 abstract contract EnglishAuction {
     /// @dev The address of the item’s seller
-    address private immutable seller;
+    address internal immutable seller;
 
     /// @dev Timestamp (in seconds) at which the auction ends
-    uint256 private endTime;
+    uint256 internal endTime;
 
     /// @dev The current highest bid amount
     ///      This is set to the reserve price at constuction time
-    uint256 private highestBid;
+    uint256 internal highestBid;
 
     /// @dev The address of the highest bidder
-    address private highestBidder;
+    address internal highestBidder;
 
     /// @dev Indicates if the auction has been finalized
-    bool private finalized;
+    bool internal finalized;
 
     /// @dev Mapping of addresses to refunds they can withdraw (due to being outbid).
-    mapping(address bidder => uint256 amount) private refunds;
+    mapping(address bidder => uint256 amount) internal refunds;
 
     // -------------------------
     // Anti-Sniping Variables (https://en.wikipedia.org/wiki/Auction_sniping)
@@ -52,11 +52,11 @@ abstract contract EnglishAuction {
     ///         the auction endTime is extended by `extensionPeriod` seconds.
     ///         If you don't want to extend the auction in the case of a last minute bid, set this to 0.
     ///         But it is highly recommended to have some extension period, as it will discourage last minute sniping.
-    uint256 private immutable extensionThreshold;
-    uint256 private immutable extensionPeriod;
+    uint256 internal immutable extensionThreshold;
+    uint256 internal immutable extensionPeriod;
 
     /// @dev Accumulated proceeds for the seller to withdraw after finalization.
-    uint256 private sellerProceeds;
+    uint256 internal sellerProceeds;
 
     /// @notice Emitted when the auction starts.
     /// @param seller The address of the seller.
@@ -234,6 +234,9 @@ abstract contract EnglishAuction {
             sellerProceeds += highestBid;
             // Transfer asset to the winner
             _transferAssetToWinner(highestBidder);
+        } else {
+            // Allow the seller to withdraw the asset that was locked in the contract
+            _transferAssetToSeller();
         }
 
         emit AuctionFinalized(highestBidder, highestBid);
@@ -344,6 +347,13 @@ abstract contract EnglishAuction {
      *      }
      */
     function _transferAssetToWinner(address winner) internal virtual;
+
+    /**
+     * @dev Internal hook that MUST be overridden by the implementing contract to handle
+     *      the transfer of assets (e.g., NFTs, custom digital assets) to the seller in case there's no winner.
+     *      This function is called during auction finalization.
+     */
+    function _transferAssetToSeller() internal virtual;
 
     // -------------------------
     // Checks for modifiers

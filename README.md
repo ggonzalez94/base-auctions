@@ -4,12 +4,14 @@
 
 ## Why Auctions Matter in Web3?
 
-Auctions are a core mechanism for determining fair market prices, allocating scarce digital assets, and fostering open participation. In web3, trustless, on-chain auctions bring transparency, security, and efficiency—empowering anyone, anywhere to participate without intermediaries.  
+Auctions are a core mechanism  for a wide array of situations where price discovery, liquidity, or allocation of scarce resources is needed. In web3, trustless, on-chain auctions bring transparency, security, and efficiency—empowering anyone, anywhere to participate without intermediaries.
+Auction design is a careful balance of encouraging bidders to reveal valuations, discouraging cheating or collusion, and maximizing revenues.  
 Auctions are everywhere in web3, from NFT sales to MEV, but there's no library that provides teams with base implementations they can extend.
 
 ## Current Implementations
 
 * [English Auction](src/EnglishAuction.sol): A classic ascending-price auction that allows bids until a deadline and extends time to prevent last-second sniping. Built with extensibility hooks for custom increments, bidder whitelists, and unique asset-transfer logic.
+* [Dutch Auction](src/DutchAuction.sol): A descending-price auction that sells multiple identical items. This type of  auction is most commonly used for goods that are required to be sold quickly. The default implementation implements a linear decrease in price until the floor price is reached, but this can be overridden to implement a custom price curve.
 
 ## Installation
 

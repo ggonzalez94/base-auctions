@@ -24,6 +24,12 @@ contract MockEnglishAuction is EnglishAuction {
     function _transferAssetToWinner(address winner) internal override {
         winnerAssetRecipient = winner;
     }
+
+    // Here you would normally transfer the asset to the seller(e.g. the NFT) if there was no winner
+    // For testing purposes, we just set the winnerAssetRecipient to the seller
+    function _transferAssetToSeller() internal override {
+        winnerAssetRecipient = seller;
+    }
 }
 
 // Mock to test anti-sniping
