@@ -10,6 +10,7 @@ import {EnglishAuction} from "../src/EnglishAuction.sol";
 
 contract MockEnglishAuction is EnglishAuction {
     address public winnerAssetRecipient;
+    bool public returnAssetToSeller;
 
     constructor(
         address _seller,
@@ -28,7 +29,7 @@ contract MockEnglishAuction is EnglishAuction {
     // Here you would normally transfer the asset to the seller(e.g. the NFT) if there was no winner
     // For testing purposes, we just set the winnerAssetRecipient to the seller
     function _transferAssetToSeller() internal override {
-        winnerAssetRecipient = seller;
+        returnAssetToSeller = true;
     }
 }
 
