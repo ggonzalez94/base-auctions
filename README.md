@@ -6,12 +6,17 @@
 
 Auctions are a core mechanism  for a wide array of situations where price discovery, liquidity, or allocation of scarce resources is needed. In web3, trustless, on-chain auctions bring transparency, security, and efficiency—empowering anyone, anywhere to participate without intermediaries.
 Auction design is a careful balance of encouraging bidders to reveal valuations, discouraging cheating or collusion, and maximizing revenues.  
-Auctions are everywhere in web3, from NFT sales to MEV, but there's no library that provides teams with base implementations they can extend.
+Auctions are everywhere in web3, from NFT sales to liquidations and ICOs, but there's no library that provides teams with base implementations they can extend. This library aims to fill that gap.
 
 ## Current Implementations
 
-* [English Auction](src/EnglishAuction.sol): A classic ascending-price auction that allows bids until a deadline and extends time to prevent last-second sniping. Built with extensibility hooks for custom increments, bidder whitelists, and unique asset-transfer logic.
-* [Dutch Auction](src/DutchAuction.sol): A descending-price auction that sells multiple identical items. This type of  auction is most commonly used for goods that are required to be sold quickly. The default implementation implements a linear decrease in price until the floor price is reached, but this can be overridden to implement a custom price curve.
+* [English Auction](src/EnglishAuction.sol): A classic ascending-price auction that allows bids until a deadline and extends time to prevent last-second sniping. Built with extensibility hooks for custom logic like increments and bidder whitelists.
+
+* [Dutch Auction](src/DutchAuction.sol): A descending-price auction that sells multiple identical items. This type of  auction is most commonly used for goods that are required to be sold quickly and efficiently. The default implementation uses a linear decrease in price until the floor price is reached, but this can be overridden to implement a custom price curve.
+
+## Examples
+
+You can find examples of how to use the library in the [examples](examples) folder.
 
 ## Installation
 
@@ -52,17 +57,18 @@ contract MyAuction is EnglishAuction {
 
 ## Contributing
 
-We welcome contributions from the community! If you have ideas for new auction types, improvements to the existing code, or better tooling and documentation, please open an issue or submit a PR.
+This project is still in early phases of development. We welcome contributions from the community. If you have ideas for new auction types, improvements to the existing code, or better documentation, please open an issue or submit a PR.
 
 ## Roadmap
 
 These are some of the next auctions we plan to implement, but it's very early and we're open to suggestions.
 
-* [ ] Dutch Auction
+* [x] Dutch Auction
 * [ ] Sealed-Bid Auction
 * [ ] Vickrey Auction (Second-Price Sealed-Bid Auction)
 * [ ] Reverse Auction
 * [ ] All-pay auction (also known as a Tullock contest)
+* [ ] Support for bidding with ERC20 tokens
 
 ## Disclaimer
 
