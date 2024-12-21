@@ -1,8 +1,8 @@
 # On-Chain Auctions Library
 
-*Modular, extensible and well documented auctions written in Solidity*
+**Modular, extensible and well documented auctions written in Solidity**
 
-## Why Auctions Matter in Web3?
+## Why auctions matter in Web3?
 
 Auctions are a core mechanism  for a wide array of situations where price discovery, liquidity, or allocation of scarce resources is needed. In web3, trustless, on-chain auctions bring transparency, security, and efficiency—empowering anyone, anywhere to participate without intermediaries.
 Auction design is a careful balance of encouraging bidders to reveal valuations, discouraging cheating or collusion, and maximizing revenues.  
@@ -73,3 +73,10 @@ These are some of the next auctions we plan to implement, but it's very early an
 ## Disclaimer
 
 This code has not been audited and is provided "as is". While we've taken care to write well-documented, secure code, you use this software at your own risk.
+
+## Resources
+
+Wanna learn more about auctions?
+
+*[On Paper to On-Chain: How Auction Theory Informs Implementations - a16zcrypto](https://a16zcrypto.com/posts/article/how-auction-theory-informs-implementations/)
+*
