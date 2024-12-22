@@ -13,25 +13,32 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
  * - If inventory remains after time ends, the seller can reclaim them via `withdrawUnsoldAssets()`.
  */
 abstract contract DutchAuction is ReentrancyGuard {
-    /// @notice The address of the seller
+    /// @dev The address of the seller
     address internal immutable seller;
 
-    /// @notice The auction start time
+    /// @dev The auction start time
     uint256 internal immutable startTime;
 
-    /// @notice The duration of the auction in seconds
+    /// @dev The duration of the auction in seconds
     uint256 internal immutable duration;
 
-    /// @notice The initial start price at `startTime`
+    /// @dev The initial start price at `startTime`
     uint256 internal immutable startPrice;
 
-    /// @notice The lowest possible price at the end of `duration`
+    /// @dev The lowest possible price at the end of `duration`
     uint256 internal immutable floorPrice;
 
-    /// @notice The number of identical items available for sale
+    /// @dev The number of identical items available for sale
     uint256 private inventory;
 
-    event AuctionStarted(
+    /// @notice Emitted when a new auction is started
+    /// @param seller The address of the seller
+    /// @param startPrice The initial price per item
+    /// @param floorPrice The minimum possible price per item
+    /// @param startTime The timestamp when the auction begins
+    /// @param duration The length of the auction in seconds
+    /// @param inventory The total number of items available for sale
+    event AuctionCreated(
         address indexed seller,
         uint256 startPrice,
         uint256 floorPrice,
@@ -40,20 +47,61 @@ abstract contract DutchAuction is ReentrancyGuard {
         uint256 inventory
     );
 
+    /// @notice Emitted when items are purchased from the auction
+    /// @param buyer The address of the buyer
+    /// @param quantity The number of items purchased
+    /// @param totalPaid The total amount of ETH paid for the items
     event Purchased(address indexed buyer, uint256 quantity, uint256 totalPaid);
+
+    /// @notice Emitted when the seller withdraws auction proceeds
+    /// @param recipient The address receiving the funds
+    /// @param amount The amount of ETH withdrawn
     event FundsWithdrawn(address indexed recipient, uint256 amount);
+
+    /// @notice Emitted when unsold items are withdrawn by the seller
+    /// @param seller The address of the seller
+    /// @param quantity The number of unsold items withdrawn
     event UnsoldAssetsWithdrawn(address indexed seller, uint256 quantity);
 
+    /// @dev Thrown when trying to interact with an auction before its start time
     error AuctionNotStarted();
+
+    /// @dev Thrown when trying to interact with an auction that has ended (due to time or sold out)
     error AuctionEnded();
+
+    /// @dev Thrown when insufficient ETH is sent to cover the purchase
+    /// @param sent The amount of ETH sent
+    /// @param required The amount of ETH required
     error InsufficientAmount(uint256 sent, uint256 required);
+
+    /// @dev Thrown when attempting to withdraw proceeds when contract balance is zero
     error NoProceedsAvailable();
+
+    /// @dev Thrown when attempting to purchase an invalid quantity of items
+    /// @param quantity The requested quantity
+    /// @param available The available inventory
     error InvalidQuantity(uint256 quantity, uint256 available);
+
+    /// @dev Thrown when trying to withdraw unsold assets before auction has ended
     error AuctionNotEndedForWithdraw();
+
+    /// @dev Thrown when trying to withdraw unsold assets when all items were sold
     error NoUnsoldAssetsToWithdraw();
+
+    /// @dev Thrown when floor price is set higher than start price
+    /// @param floorPrice The specified floor price
+    /// @param startPrice The specified start price
     error FloorPriceExceedsStartPrice(uint256 floorPrice, uint256 startPrice);
+
+    /// @dev Thrown when auction duration is set to zero
     error ZeroDuration();
+
+    /// @dev Thrown when start time is set to a past timestamp
+    /// @param startTime The specified start time
+    /// @param blockTimestamp The current block timestamp
     error StartTimeInPast(uint256 startTime, uint256 blockTimestamp);
+
+    /// @dev Thrown when trying to create an auction with zero items
     error ZeroInventory();
 
     // -------------------------
@@ -99,7 +147,7 @@ abstract contract DutchAuction is ReentrancyGuard {
         duration = _duration;
         inventory = _inventory;
 
-        emit AuctionStarted(seller, startPrice, floorPrice, startTime, duration, inventory);
+        emit AuctionCreated(seller, startPrice, floorPrice, startTime, duration, inventory);
     }
 
     // -------------------------

@@ -88,13 +88,32 @@ abstract contract EnglishAuction {
     /// @param newEndTime The new end time of the auction.
     event AuctionExtended(uint256 newEndTime);
 
+    /// @dev Thrown when trying to perform an action on an already finalized auction
     error AuctionAlreadyFinalized();
+
+    /// @dev Thrown when trying to finalize an auction before its end time
     error AuctionNotYetEnded();
+
+    /// @dev Thrown when trying to perform an action that requires a finalized auction
     error AuctionNotYetFinalized();
+
+    /// @dev Thrown when trying to place a bid after the auction has ended
     error AuctionEnded();
+
+    /// @dev Thrown when a non-seller address attempts to call a seller-only function
+    /// @param caller The address that attempted the call
     error OnlySellerCanCall(address caller);
+
+    /// @dev Thrown when a bid is not higher than the current highest bid
+    /// @param bid The bid amount that was too low
+    /// @param highestBid The current highest bid amount
     error BidNotHighEnough(uint256 bid, uint256 highestBid);
+
+    /// @dev Thrown when an address tries to withdraw a refund but has none available
+    /// @param caller The address attempting to withdraw
     error NoRefundAvailable(address caller);
+
+    /// @dev Thrown when the seller tries to withdraw proceeds but none are available
     error NoProceedsAvailable();
 
     // -------------------------
