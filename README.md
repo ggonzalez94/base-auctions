@@ -14,6 +14,12 @@ Auctions are everywhere in web3, from NFT sales to liquidations and ICOs, but th
 
 * [Dutch Auction](src/DutchAuction.sol): A descending-price auction that sells multiple identical items. This type of  auction is most commonly used for goods that are required to be sold quickly and efficiently. The default implementation uses a linear decrease in price until the floor price is reached, but this can be overridden to implement a custom price curve.
 
+* [First Price Sealed-Bid Auction](src/FirstPriceSealedBidAuction.sol): A sealed-bid auction where the highest bidder pays their own bid.It uses a commit-reveal mechanism and allows overcollateralized bids for privacy.
+
+* [Second Price Sealed-Bid Auction(a.k.a. Vickrey Auction)](src/SecondPriceSealedBidAuction.sol): A sealed-bid auction where the highest bidder pays the second-highest bid. It uses a commit-reveal mechanism and allows overcollateralized bids for privacy.
+
+* [Base Sealed-Bid Auction](src/BaseSealedBidAuction.sol): A base contract for sealed-bid auctions using a commit-reveal mechanism. It is the base contract used for both the First Price and Second Price Sealed-Bid Auctions. It is not meant to be used directly, but if you need to implement a custom sealed-bid auction, you can inherit from it.
+
 ## Examples
 
 You can find examples of how to use the library in the [examples](examples) folder.
