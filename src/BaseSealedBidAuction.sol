@@ -49,20 +49,21 @@ abstract contract BaseSealedBidAuction is ReentrancyGuard {
     ///        an attack by using the full 32-byte hash value for the bid commitment.
     /// @param collateral The amount of collateral backing the bid.
     struct BidInfo {
-        bytes20 commitHash; // keccak256(abi.encode(...)) representing their sealed bid
+        bytes20 commitHash; // bytes20(keccak256(abi.encode(salt, bidValue))) representing their sealed bid
         uint96 collateral; // must be >= hidden bid
     }
 
     /// @dev Per-user single bid storage
     mapping(address => BidInfo) internal bids;
 
-    // -------------------------
-    // Auction state(common across all sealed bid auctions)
-    // -------------------------
     /// @dev The address of the current winner(e.g.highest bidder for a first-price auction)
     address internal currentWinner;
+
     /// @dev The number of unrevealed bids
     uint64 internal numUnrevealedBids;
+
+    /// @dev Whether the auction has been finalized
+    bool internal finalized;
 
     /// @notice Emitted when a bidder commits their bid during the commit phase
     /// @param bidder The address of the bidder who committed their bid
@@ -119,6 +120,9 @@ abstract contract BaseSealedBidAuction is ReentrancyGuard {
     /// @dev Thrown when trying to withdraw collateral for an unrevealed bid
     error UnrevealedBidError();
 
+    /// @dev Thrown when trying to end auction after it has already been finalized
+    error AuctionAlreadyFinalized();
+
     /**
      * @param _seller The address of the seller
      * @param _startTime The block timestamp at which the auction starts
@@ -128,7 +132,7 @@ abstract contract BaseSealedBidAuction is ReentrancyGuard {
     constructor(address _seller, uint256 _startTime, uint256 _commitDeadline, uint256 _revealDeadline) {
         if (_seller == address(0)) revert InvalidSeller();
         if (_commitDeadline >= _revealDeadline) revert InvalidCommitRevealDeadlines();
-        if (_startTime <= block.timestamp || _startTime >= _commitDeadline) revert InvalidStartTime();
+        if (_startTime < block.timestamp || _startTime >= _commitDeadline) revert InvalidStartTime();
 
         seller = _seller;
         commitDeadline = _commitDeadline;
@@ -204,9 +208,14 @@ abstract contract BaseSealedBidAuction is ReentrancyGuard {
      *  - Pays the seller.
      */
     function endAuction() external nonReentrant {
+        // Avoid this function being called multiple times
+        if (finalized) revert AuctionAlreadyFinalized();
+
         // We allow ending the auction sooner if there are no unrevealed bids, but not before the reveal period.
         if (block.timestamp <= commitDeadline) revert NotReadyToEnd();
         if (block.timestamp <= revealDeadline && numUnrevealedBids > 0) revert NotReadyToEnd();
+
+        finalized = true;
 
         uint96 finalPrice = _computeFinalPrice();
         address winner = currentWinner;

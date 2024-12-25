@@ -16,13 +16,13 @@ abstract contract DutchAuction is ReentrancyGuard {
     /// @dev The address of the seller
     address internal immutable seller;
 
-    /// @dev The auction start time
+    /// @dev Timestamp (in seconds) at which the auction starts
     uint256 internal immutable startTime;
 
-    /// @dev The duration of the auction in seconds
+    /// @dev The duration (in seconds) of the auction
     uint256 internal immutable duration;
 
-    /// @dev The initial start price at `startTime`
+    /// @dev The initial price at `startTime`
     uint256 internal immutable startPrice;
 
     /// @dev The lowest possible price at the end of `duration`
@@ -108,8 +108,8 @@ abstract contract DutchAuction is ReentrancyGuard {
     // Modifiers
     // -------------------------
 
+    /// @dev Auction is considered active during [startTime, endTime] and inventory > 0
     modifier auctionActive() {
-        // Auction is active if startTime < time < end and inventory > 0
         if (block.timestamp < startTime) revert AuctionNotStarted();
         if (isFinished()) revert AuctionEnded();
         _;
@@ -271,7 +271,7 @@ abstract contract DutchAuction is ReentrancyGuard {
     }
 
     function isFinished() public view returns (bool) {
-        return block.timestamp >= getEndTime() || inventory == 0;
+        return block.timestamp > getEndTime() || inventory == 0;
     }
 
     // -------------------------

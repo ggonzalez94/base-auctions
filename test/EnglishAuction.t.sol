@@ -15,10 +15,11 @@ contract MockEnglishAuction is EnglishAuction {
     constructor(
         address _seller,
         uint256 _reservePrice,
+        uint256 _startTime,
         uint256 _duration,
         uint256 _extensionThreshold,
         uint256 _extensionPeriod
-    ) EnglishAuction(_seller, _reservePrice, _duration, _extensionThreshold, _extensionPeriod) {}
+    ) EnglishAuction(_seller, _reservePrice, _startTime, _duration, _extensionThreshold, _extensionPeriod) {}
 
     // Here you would normally transfer the actual asset to the winner(e.g. the NFT)
     // For testing purposes, we just set the winnerAssetRecipient to the winner
@@ -33,18 +34,19 @@ contract MockEnglishAuction is EnglishAuction {
     }
 }
 
-// Mock to test anti-sniping
+// Mock to test increment requirements
 contract MockEnglishAuctionWithIncrement is MockEnglishAuction {
     uint256 public incrementRatio; // e.g. at least 10% higher than current bid
 
     constructor(
         address _seller,
         uint256 _reservePrice,
+        uint256 _startTime,
         uint256 _duration,
         uint256 _extensionThreshold,
         uint256 _extensionPeriod,
         uint256 _incrementRatio
-    ) MockEnglishAuction(_seller, _reservePrice, _duration, _extensionThreshold, _extensionPeriod) {
+    ) MockEnglishAuction(_seller, _reservePrice, _startTime, _duration, _extensionThreshold, _extensionPeriod) {
         incrementRatio = _incrementRatio; // 10 means 10% increments required
     }
 
@@ -72,6 +74,7 @@ contract EnglishAuctionTest is Test {
 
     uint256 reservePrice = 1 ether;
     uint256 duration = 1 days;
+    uint256 startTime = 1000;
     uint256 extensionThreshold = 300; // 5 minutes
     uint256 extensionPeriod = 600; // 10 minutes
 
@@ -79,8 +82,8 @@ contract EnglishAuctionTest is Test {
 
     function setUp() external {
         // Warp to a known start time for consistent testing
-        vm.warp(1000);
-        auction = new MockEnglishAuction(seller, reservePrice, duration, extensionThreshold, extensionPeriod);
+        vm.warp(startTime);
+        auction = new MockEnglishAuction(seller, reservePrice, startTime, duration, extensionThreshold, extensionPeriod);
 
         vm.deal(bidder1, 10 ether);
         vm.deal(bidder2, 10 ether);
@@ -102,6 +105,14 @@ contract EnglishAuctionTest is Test {
     //////////////////////////
     // Bidding Tests        //
     //////////////////////////
+
+    function test_placeBid_RevertWhen_StartTimeInTheFuture() external {
+        MockEnglishAuction notStartedAuction = new MockEnglishAuction(
+            seller, reservePrice, block.timestamp + 1, duration, extensionThreshold, extensionPeriod
+        );
+        vm.expectRevert(EnglishAuction.AuctionNotStarted.selector);
+        notStartedAuction.placeBid{value: 1 ether}();
+    }
 
     function test_placeBidUpdatesHighestBid() external {
         vm.startPrank(bidder1);
@@ -131,7 +142,7 @@ contract EnglishAuctionTest is Test {
     }
 
     function test_placeBid_RevertWhen_AuctionEnded() external {
-        vm.warp(block.timestamp + duration + 1);
+        vm.warp(startTime + duration + 1);
         vm.prank(bidder1);
         vm.expectRevert(EnglishAuction.AuctionEnded.selector);
         auction.placeBid{value: 2 ether}();
@@ -183,18 +194,15 @@ contract EnglishAuctionTest is Test {
         );
     }
 
-    function test_withdrawRefund_RevertWhen_NoRefundForCaller() external {
-        vm.expectRevert(abi.encodeWithSelector(EnglishAuction.NoRefundAvailable.selector, randomUser));
-        vm.prank(randomUser);
-        auction.withdrawRefund();
-    }
-
-    function test_withdrawRefund_RevertWhen_CurrentHighestBidder() external {
+    function test_withdrawRefund_TransfersZeroToCurrentHighestBidder() external {
         vm.startPrank(bidder1);
         auction.placeBid{value: 2 ether}();
 
-        vm.expectRevert(abi.encodeWithSelector(EnglishAuction.NoRefundAvailable.selector, bidder1));
+        uint256 bidder1BalanceBefore = bidder1.balance;
         auction.withdrawRefund();
+        uint256 bidder1BalanceAfter = bidder1.balance;
+
+        assertEq(bidder1BalanceAfter, bidder1BalanceBefore, "Bidder1 should be refunded with zero");
     }
 
     function test_withdrawSellerProceeds_Works() external {
@@ -212,25 +220,16 @@ contract EnglishAuctionTest is Test {
         assertEq(sellerBalanceAfter, sellerBalanceBefore + 2 ether, "Seller should receive funds");
     }
 
-    function test_withdrawSellerProceeds_RevertWhen_NoProceedsAvailable() external {
+    function test_withdrawSellerProceeds_TransfersZeroWhenNoProceeds() external {
         vm.startPrank(seller);
         vm.warp(block.timestamp + duration + 1);
         auction.finalizeAuction();
 
-        vm.expectRevert(EnglishAuction.NoProceedsAvailable.selector);
+        uint256 sellerBalanceBefore = seller.balance;
         auction.withdrawSellerProceeds();
-    }
+        uint256 sellerBalanceAfter = seller.balance;
 
-    function test_withdrawSellerProceeds_RevertWhen_AuctionNotFinalized() external {
-        vm.startPrank(seller);
-        vm.expectRevert(EnglishAuction.AuctionNotYetFinalized.selector);
-        auction.withdrawSellerProceeds();
-    }
-
-    function test_withdrawSellerProceeds_RevertWhen_CallerIsNotSeller() external {
-        vm.startPrank(bidder1);
-        vm.expectRevert(abi.encodeWithSelector(EnglishAuction.OnlySellerCanCall.selector, bidder1));
-        auction.withdrawSellerProceeds();
+        assertEq(sellerBalanceAfter, sellerBalanceBefore, "Seller should receive zero");
     }
 
     // //////////////////////////
@@ -312,7 +311,8 @@ contract EnglishAuctionTest is Test {
 
     function test_placeBidDoesNotExtendWhenThresholdIsZero() external {
         // Deploy a new auction with zero threshold
-        MockEnglishAuction noExtendAuction = new MockEnglishAuction(seller, reservePrice, duration, 0, extensionPeriod);
+        MockEnglishAuction noExtendAuction =
+            new MockEnglishAuction(seller, reservePrice, startTime, duration, 0, extensionPeriod);
         uint256 endTimeBefore = noExtendAuction.getEndTime();
 
         // Warp close to end
@@ -329,7 +329,7 @@ contract EnglishAuctionTest is Test {
     function test_placeBidDoesNotExtendWhenExtensionPeriodIsZero() external {
         // Deploy a new auction with zero extension period
         MockEnglishAuction noExtendAuction =
-            new MockEnglishAuction(seller, reservePrice, duration, extensionThreshold, 0);
+            new MockEnglishAuction(seller, reservePrice, startTime, duration, extensionThreshold, 0);
         uint256 endTimeBefore = noExtendAuction.getEndTime();
 
         // Warp close to end
@@ -352,6 +352,7 @@ contract EnglishAuctionTest is Test {
         MockEnglishAuctionWithIncrement incrementAuction = new MockEnglishAuctionWithIncrement(
             seller,
             reservePrice,
+            startTime,
             duration,
             extensionThreshold,
             extensionPeriod,
@@ -373,6 +374,7 @@ contract EnglishAuctionTest is Test {
         MockEnglishAuctionWithIncrement incrementAuction = new MockEnglishAuctionWithIncrement(
             seller,
             reservePrice,
+            startTime,
             duration,
             extensionThreshold,
             extensionPeriod,

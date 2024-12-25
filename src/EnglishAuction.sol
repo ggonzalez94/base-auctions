@@ -28,6 +28,9 @@ abstract contract EnglishAuction {
     /// @dev The address of the item’s seller
     address internal immutable seller;
 
+    /// @dev Timestamp (in seconds) at which the auction starts
+    uint256 private immutable startTime;
+
     /// @dev Timestamp (in seconds) at which the auction ends
     uint256 private endTime;
 
@@ -62,7 +65,7 @@ abstract contract EnglishAuction {
     /// @param seller The address of the seller.
     /// @param reservePrice The initial reserve price.
     /// @param endTime The scheduled end time of the auction.
-    event AuctionStarted(address indexed seller, uint256 reservePrice, uint256 endTime);
+    event AuctionCreated(address indexed seller, uint256 reservePrice, uint256 startTime, uint256 endTime);
 
     /// @notice Emitted when a new highest bid is placed.
     /// @param bidder The address of the new highest bidder.
@@ -91,57 +94,36 @@ abstract contract EnglishAuction {
     /// @dev Thrown when trying to perform an action on an already finalized auction
     error AuctionAlreadyFinalized();
 
-    /// @dev Thrown when trying to finalize an auction before its end time
-    error AuctionNotYetEnded();
-
     /// @dev Thrown when trying to perform an action that requires a finalized auction
     error AuctionNotYetFinalized();
 
-    /// @dev Thrown when trying to place a bid after the auction has ended
+    /// @dev Thrown when trying to place a bid after the auction time has ended
     error AuctionEnded();
 
-    /// @dev Thrown when a non-seller address attempts to call a seller-only function
-    /// @param caller The address that attempted the call
-    error OnlySellerCanCall(address caller);
+    /// @dev Thrown when trying to finalize an auction before its end time
+    error AuctionNotYetEnded();
 
     /// @dev Thrown when a bid is not higher than the current highest bid
     /// @param bid The bid amount that was too low
     /// @param highestBid The current highest bid amount
     error BidNotHighEnough(uint256 bid, uint256 highestBid);
 
-    /// @dev Thrown when an address tries to withdraw a refund but has none available
-    /// @param caller The address attempting to withdraw
-    error NoRefundAvailable(address caller);
+    /// @dev Thrown when trying to perform an action before the auction has started
+    error AuctionNotStarted();
 
-    /// @dev Thrown when the seller tries to withdraw proceeds but none are available
-    error NoProceedsAvailable();
+    /// @dev Thrown when trying to create an auction with zero duration
+    error InvalidDuration();
 
-    // -------------------------
-    // Modifiers
-    // -------------------------
+    /// @dev Thrown when trying to create an auction with a start time in the past
+    error InvalidStartTime();
 
-    modifier onlySeller() {
-        _checkSeller();
-        _;
-    }
+    /// @dev Thrown when trying to create an auction with a seller address of zero
+    error InvalidSeller();
 
-    modifier notFinalized() {
-        _checkAuctionNotFinalized();
-        _;
-    }
-
-    modifier auctionFinalized() {
-        _checkAuctionFinalized();
-        _;
-    }
-
+    /// @dev Auction is considered ongoing during [startTime, endTime)
     modifier auctionOngoing() {
-        _checkAuctionOngoing();
-        _;
-    }
-
-    modifier auctionEnded() {
-        _checkAuctionEnded();
+        if (block.timestamp < startTime) revert AuctionNotStarted();
+        if (block.timestamp > endTime) revert AuctionEnded();
         _;
     }
 
@@ -149,6 +131,7 @@ abstract contract EnglishAuction {
      * @notice Creates a new English auction.
      * @param _seller The address of the seller.
      * @param _reservePrice The reserve price that must be met or exceeded for the auction to produce a sale.
+     * @param _startTime The timestamp (in seconds) at which the auction starts.
      * @param _duration The duration (in seconds) from now until the auction ends.
      * @param _extensionThreshold If a bid is placed within this many seconds of the end, time is extended.
      * @param _extensionPeriod How many seconds to extend the auction by when triggered.
@@ -156,17 +139,23 @@ abstract contract EnglishAuction {
     constructor(
         address _seller,
         uint256 _reservePrice,
+        uint256 _startTime,
         uint256 _duration,
         uint256 _extensionThreshold,
         uint256 _extensionPeriod
     ) {
+        if (_seller == address(0)) revert InvalidSeller();
+        if (_startTime < block.timestamp) revert InvalidStartTime();
+        if (_duration == 0) revert InvalidDuration();
+
         seller = _seller;
         highestBid = _reservePrice;
-        endTime = block.timestamp + _duration;
+        startTime = _startTime;
+        endTime = _startTime + _duration;
         extensionThreshold = _extensionThreshold;
         extensionPeriod = _extensionPeriod;
 
-        emit AuctionStarted(seller, highestBid, endTime);
+        emit AuctionCreated(seller, highestBid, startTime, endTime);
     }
 
     // -------------------------
@@ -209,11 +198,8 @@ abstract contract EnglishAuction {
      */
     function withdrawRefund() external {
         uint256 amount = refunds[msg.sender];
-        if (amount == 0) {
-            revert NoRefundAvailable(msg.sender);
-        }
-
         refunds[msg.sender] = 0;
+
         (bool success,) = payable(msg.sender).call{value: amount}("");
         require(success, "Transfer failed");
 
@@ -221,20 +207,17 @@ abstract contract EnglishAuction {
     }
 
     /**
-     * @notice Allows the seller to withdraw their proceeds after the auction has been finalized.
-     * @dev Override to implement custom logic if necessary (e.g. sending the funds to a different address or burning them)
+     * @notice Sends proceeds to the seller after the auction has been finalized.
+     * @dev Since `sellerProceeds` is only incremented when the auction is finalized, there's no need to check the status of the auction here.
+     *      Override to implement custom logic if necessary (e.g. sending the funds to a different address or burning them)
      *      When overriding, make sure to reset the sellerProceeds to 0 and add necessary access control.
      */
-    function withdrawSellerProceeds() external virtual onlySeller auctionFinalized {
+    function withdrawSellerProceeds() external virtual {
         uint256 amount = sellerProceeds;
-        if (amount == 0) {
-            revert NoProceedsAvailable();
-        }
         sellerProceeds = 0;
 
         (bool success,) = payable(seller).call{value: amount}("");
         require(success, "Transfer failed");
-
         emit FundsWithdrawn(seller, amount);
     }
 
@@ -245,7 +228,10 @@ abstract contract EnglishAuction {
      *      You need to override `_transferAssetToWinner` to implement the asset transfer logic.
      *      Funds are not transferred automatically to the seller, they need to call `withdrawSellerProceeds`.
      */
-    function finalizeAuction() external virtual notFinalized auctionEnded {
+    function finalizeAuction() external virtual {
+        if (finalized) revert AuctionAlreadyFinalized();
+        if (block.timestamp <= endTime) revert AuctionNotYetEnded();
+
         finalized = true;
 
         if (highestBidder != address(0)) {
@@ -264,6 +250,14 @@ abstract contract EnglishAuction {
     // -------------------------
     // Public View Functions
     // -------------------------
+
+    /**
+     * @notice Gets the scheduled start time of the auction.
+     * @return The timestamp in seconds at which the auction starts.
+     */
+    function getStartTime() public view returns (uint256) {
+        return startTime;
+    }
 
     /**
      * @notice Gets the scheduled end time of the auction.
@@ -373,28 +367,4 @@ abstract contract EnglishAuction {
      *      This function is called during auction finalization.
      */
     function _transferAssetToSeller() internal virtual;
-
-    // -------------------------
-    // Checks for modifiers
-    // -------------------------
-
-    function _checkSeller() internal view {
-        if (msg.sender != seller) revert OnlySellerCanCall(msg.sender);
-    }
-
-    function _checkAuctionNotFinalized() internal view {
-        if (finalized) revert AuctionAlreadyFinalized();
-    }
-
-    function _checkAuctionFinalized() internal view {
-        if (!finalized) revert AuctionNotYetFinalized();
-    }
-
-    function _checkAuctionEnded() internal view {
-        if (block.timestamp < endTime) revert AuctionNotYetEnded();
-    }
-
-    function _checkAuctionOngoing() internal view {
-        if (block.timestamp >= endTime) revert AuctionEnded();
-    }
 }
