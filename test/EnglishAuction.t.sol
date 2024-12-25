@@ -28,7 +28,7 @@ contract MockEnglishAuction is EnglishAuction {
     }
 
     // Here you would normally transfer the asset to the seller(e.g. the NFT) if there was no winner
-    // For testing purposes, we just set the winnerAssetRecipient to the seller
+    // For testing purposes, we just set the a boolean flag
     function _transferAssetToSeller() internal override {
         returnAssetToSeller = true;
     }

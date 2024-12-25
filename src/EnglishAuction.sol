@@ -22,7 +22,7 @@ pragma solidity ^0.8.20;
  *    whitelisting or additional checks.
  * 3. Optionally override `_validateBidIncrement` if you want to require a certain increment over the previous highest bid.
  *
- * If no valid bids are placed above the reserve price by the time the auction ends, anyone can simply finalize the auction and no asset will be transferred.
+ * If no valid bids are placed above the reserve price by the time the auction ends, anyone can simply finalize the auction and the asset will be returned to the seller.
  */
 abstract contract EnglishAuction {
     /// @dev The address of the item’s seller

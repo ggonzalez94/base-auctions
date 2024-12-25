@@ -45,7 +45,7 @@ import {EnglishAuction} from "@base-auctions/EnglishAuction.sol";
 
 contract MyAuction is EnglishAuction {
     address public winnerAssetRecipient;
-
+    bool public returnAssetToSeller;
     constructor(
         address _seller,
         uint256 _reservePrice,
@@ -58,6 +58,11 @@ contract MyAuction is EnglishAuction {
     // Here you would normally transfer the actual asset to the winner(e.g. the NFT)
     function _transferAssetToWinner(address winner) internal override {
         winnerAssetRecipient = winner;
+    }
+
+    // Here you would normally transfer the asset to the seller(e.g. the NFT) if there was no winner
+    function _transferAssetToSeller() internal override {
+        returnAssetToSeller = true;
     }
 }
 ```
