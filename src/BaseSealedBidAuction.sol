@@ -20,20 +20,20 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
  *  - This design is heavily inspired by [OverCollateralizedAuction from a16z](https://github.com/a16z/auction-zoo/blob/main/src/sealed-bid/over-collateralized-auction/OverCollateralizedAuction.sol)
  */
 abstract contract BaseSealedBidAuction is ReentrancyGuard {
-    /// @dev The address of the seller or beneficiary
-    address private immutable seller;
+    /// @notice The address of the seller or beneficiary
+    address public immutable seller;
 
-    /// @dev The block timestamp at which the auction starts
-    uint256 private immutable startTime;
+    /// @notice The block timestamp at which the auction starts
+    uint256 public immutable startTime;
 
-    /// @dev The block timestamp after which no new commits can be made
-    uint256 private immutable commitDeadline;
+    /// @notice The block timestamp after which no new commits can be made
+    uint256 public immutable commitDeadline;
 
-    /// @dev The block timestamp after which no new reveals can be made
-    uint256 private immutable revealDeadline;
+    /// @notice The block timestamp after which no new reveals can be made
+    uint256 public immutable revealDeadline;
 
-    /// @dev The minimum price required to win (reserve price)
-    uint96 private immutable reservePrice;
+    /// @notice The minimum price required to win (reserve price)
+    uint96 public immutable reservePrice;
 
     /// @dev Info about one bidder’s commit
     /// @param commitHash The hash commitment of a bid value
@@ -56,7 +56,7 @@ abstract contract BaseSealedBidAuction is ReentrancyGuard {
     }
 
     /// @dev Per-user single bid storage
-    mapping(address => BidInfo) private bids;
+    mapping(address => BidInfo) internal bids;
 
     // -------------------------
     // Auction state(common across all sealed bid auctions)
@@ -64,6 +64,11 @@ abstract contract BaseSealedBidAuction is ReentrancyGuard {
     uint96 internal highestBid;
     address internal highestBidder;
     uint64 internal numUnrevealedBids;
+
+    /// @notice Emitted when a bidder commits their bid during the commit phase
+    /// @param bidder The address of the bidder who committed their bid
+    /// @param commitHash The hash commitment of the bid
+    event BidCommitted(address indexed bidder, bytes20 commitHash);
 
     /// @notice Emitted when a bidder reveals their bid during the reveal phase
     /// @param bidder The address of the bidder who revealed their bid
@@ -99,6 +104,9 @@ abstract contract BaseSealedBidAuction is ReentrancyGuard {
 
     /// @dev Thrown when attempting to set the seller address to zero
     error InvalidSeller();
+
+    /// @dev Thrown when trying to withdraw collateral while still in the run to win the auction
+    error CannotWithdrawError();
 
     /// @dev Thrown when commit deadline is not before reveal deadline
     error InvalidCommitRevealDeadlines();
@@ -164,6 +172,8 @@ abstract contract BaseSealedBidAuction is ReentrancyGuard {
 
         // Increase collateral by msg.value
         bid.collateral += uint96(msg.value);
+
+        emit BidCommitted(msg.sender, commitHash);
     }
 
     /**
@@ -205,6 +215,8 @@ abstract contract BaseSealedBidAuction is ReentrancyGuard {
      *  - Pays the seller.
      */
     function endAuction() external nonReentrant {
+        // We allow ending the auction sooner if there are no bids, but not before the reveal period.
+        if (block.timestamp < commitDeadline) revert NotReadyToEnd();
         if (block.timestamp <= revealDeadline && numUnrevealedBids > 0) revert NotReadyToEnd();
 
         uint96 finalPrice = _computeFinalPrice();
@@ -225,7 +237,8 @@ abstract contract BaseSealedBidAuction is ReentrancyGuard {
         emit AuctionEnded(winner, finalPrice);
     }
 
-    /// @notice Allows bidders to withdraw their collateral after revealing their bid
+    /// @notice Withdraws collateral. Bidder must have opened their bid commitment
+    ///         and cannot be in the running to win the auction.
     /// @dev The winner can use this to withdraw excess collateral beyond the final price.
     ///      Bidders must reveal their bid before withdrawing - unrevealed bids result in
     ///      locked collateral to enforce reveal participation. This incentive mechanism
@@ -255,16 +268,24 @@ abstract contract BaseSealedBidAuction is ReentrancyGuard {
     }
 
     /// @dev Checks if a withdrawal can be performed for `bidder`.
-    ///      It requires that the bidder revealed their bid on time and locks the funds in the contract otherwise.
-    ///      This is done to incentivize bidders to always reveal, instead of whitholding if they realize they overbid.
-    ///      This logic can be customized by overriding this function, to allow for example lock funds to be withdrawn to the seller.
+    ///      - It requires that the bidder revealed their bid on time and locks the funds in the contract otherwise.
+    ///        This is done to incentivize bidders to always reveal, instead of whitholding if they realize they overbid.
+    ///      - It requires that the bidder is not in the run to win the auction.
+    ///      This logic can be customized by overriding this function, to allow for example locked funds to be withdrawn to the seller.
     ///      Or to allow late reveals for bids that were lower than the winner's bid.
+    ///      Or to apply a late reveal penalty, but still allow the bidder to withdraw their funds.
     /// @param bidder The address of the bidder to check
     /// @return amount The amount that can be withdrawn
     function _checkWithdrawal(address bidder) internal view virtual returns (uint96) {
         BidInfo storage bid = bids[bidder];
         if (bid.commitHash != bytes20(0)) {
             revert UnrevealedBidError();
+        }
+
+        // TODO: Should we move this to the calling function? Since this is intended to be overriden,
+        //      there's a risk the person overriding this function will forget to check for this.
+        if (bidder == highestBidder) {
+            revert CannotWithdrawError();
         }
 
         uint96 amount = bid.collateral;
