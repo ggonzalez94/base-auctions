@@ -7,6 +7,7 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
  * @title BaseSealedBidAuction
  * @notice A base contract for sealed-bid auctions with a commit-reveal scheme and over-collateralization.
  *         Each user has exactly one active bid, which can be overwritten (topped up) before `commitDeadline`.
+ *         This contract only handles commit-reveal and overcollateralization logic, and can be used with different auction types.
  *         It is recommended to use one of the child contracts(`FirstPriceSealedBidAuction` or `SecondPriceSealedBidAuction`) instead
  *         of using this contract directly, as they implement the logic for determining the winner, final price, and update the contract state accordingly.
  * @dev
@@ -31,9 +32,6 @@ abstract contract BaseSealedBidAuction is ReentrancyGuard {
 
     /// @notice The block timestamp after which no new reveals can be made
     uint256 public immutable revealDeadline;
-
-    /// @notice The minimum price required to win (reserve price)
-    uint96 public immutable reservePrice;
 
     /// @dev Info about one bidder’s commit
     /// @param commitHash The hash commitment of a bid value
@@ -61,8 +59,9 @@ abstract contract BaseSealedBidAuction is ReentrancyGuard {
     // -------------------------
     // Auction state(common across all sealed bid auctions)
     // -------------------------
-    uint96 internal highestBid;
-    address internal highestBidder;
+    /// @dev The address of the current winner(e.g.highest bidder for a first-price auction)
+    address internal currentWinner;
+    /// @dev The number of unrevealed bids
     uint64 internal numUnrevealedBids;
 
     /// @notice Emitted when a bidder commits their bid during the commit phase
@@ -125,15 +124,8 @@ abstract contract BaseSealedBidAuction is ReentrancyGuard {
      * @param _startTime The block timestamp at which the auction starts
      * @param _commitDeadline No commits allowed after this time
      * @param _revealDeadline No reveals allowed after this time
-     * @param _reservePrice The minimum acceptable price
      */
-    constructor(
-        address _seller,
-        uint256 _startTime,
-        uint256 _commitDeadline,
-        uint256 _revealDeadline,
-        uint96 _reservePrice
-    ) {
+    constructor(address _seller, uint256 _startTime, uint256 _commitDeadline, uint256 _revealDeadline) {
         if (_seller == address(0)) revert InvalidSeller();
         if (_commitDeadline >= _revealDeadline) revert InvalidCommitRevealDeadlines();
         if (_startTime <= block.timestamp || _startTime >= _commitDeadline) revert InvalidStartTime();
@@ -141,10 +133,6 @@ abstract contract BaseSealedBidAuction is ReentrancyGuard {
         seller = _seller;
         commitDeadline = _commitDeadline;
         revealDeadline = _revealDeadline;
-        reservePrice = _reservePrice;
-
-        // Initialize internal AuctionData with reserve
-        highestBid = _reservePrice;
     }
 
     /**
@@ -179,7 +167,7 @@ abstract contract BaseSealedBidAuction is ReentrancyGuard {
     /**
      * @notice Reveal the actual bid.
      * @dev This function only validates the amount and salt are correct, and updates the amount of unrevealed bids left.
-     *      The logic for determining if the bid is the highest, update the records and handle refunds is handled in the child contract
+     *      The logic for determining if the bid is the best(e.g. highest bid for a first-price auction), update the records and handle refunds is handled in the child contract
      *      by implementing the `_handleRevealedBid` function.
      * @param salt Random salt used in commit
      * @param bidAmount The actual bid amount user is paying
@@ -201,34 +189,43 @@ abstract contract BaseSealedBidAuction is ReentrancyGuard {
         bid.commitHash = bytes20(0);
         numUnrevealedBids--;
 
-        // `_handleRevealedBid` should update the internal state such that `highestBidder` and `highestBid` are accurate
+        // `_handleRevealedBid` should update the internal state such that `currentWinner` is accurate
         _handleRevealedBid(msg.sender, bidAmount);
 
         emit BidRevealed(msg.sender, bidAmount);
     }
 
     /**
-     * @notice Ends the auction after the reveal deadline has passed or all bids have been revealed
+     * @notice Ends the auction after the reveal deadline has passed or all bids have been revealed.
+     *         This transfers the asset to the winner, pays the seller, and returns excess collateral to the winner.
      * @dev
      *  - Finalizes the winner and final price (child decides first-price or second-price).
      *  - Transfers the asset to the winner or returns it to the seller if no valid winner.
      *  - Pays the seller.
      */
     function endAuction() external nonReentrant {
-        // We allow ending the auction sooner if there are no bids, but not before the reveal period.
-        if (block.timestamp < commitDeadline) revert NotReadyToEnd();
+        // We allow ending the auction sooner if there are no unrevealed bids, but not before the reveal period.
+        if (block.timestamp <= commitDeadline) revert NotReadyToEnd();
         if (block.timestamp <= revealDeadline && numUnrevealedBids > 0) revert NotReadyToEnd();
 
         uint96 finalPrice = _computeFinalPrice();
-        address winner = highestBidder;
+        address winner = currentWinner;
 
-        // If there's a winner, the final price is necessarily greater than 0
         if (winner != address(0)) {
             // Transfer item
             _transferAssetToWinner(winner);
 
             // Pay seller
             _withdrawSellerProceeds(finalPrice);
+
+            // Transfer excess collateral to the winner
+            uint96 excessCollateral = bids[winner].collateral - finalPrice;
+            // Not needed since we don't allow the winner to call `withdrawCollateral`, but just to be safe
+            bids[winner].collateral = 0;
+            if (excessCollateral > 0) {
+                (bool success,) = payable(winner).call{value: excessCollateral}("");
+                require(success, "Transfer failed");
+            }
         } else {
             // No valid winner(no bids revealed or none above reserve)
             _returnAssetToSeller();
@@ -239,16 +236,23 @@ abstract contract BaseSealedBidAuction is ReentrancyGuard {
 
     /// @notice Withdraws collateral. Bidder must have opened their bid commitment
     ///         and cannot be in the running to win the auction.
-    /// @dev The winner can use this to withdraw excess collateral beyond the final price.
-    ///      Bidders must reveal their bid before withdrawing - unrevealed bids result in
+    /// @dev Bidders must reveal their bid before withdrawing - unrevealed bids result in
     ///      locked collateral to enforce reveal participation. This incentive mechanism
     ///      can be customized by overriding `_checkWithdrawal`.
     function withdrawCollateral() external {
+        // If `msg.sender` is currently running to win the auction don't allow them to withdraw
+        if (msg.sender == currentWinner) {
+            revert CannotWithdrawError();
+        }
+
+        // Check withdrawal conditions and calculate amount. By default, the bidder must have revealed their bid.
         uint96 amount = _checkWithdrawal(msg.sender);
         bids[msg.sender].collateral = 0;
 
-        (bool success,) = payable(msg.sender).call{value: amount}("");
-        require(success, "Withdraw failed");
+        if (amount > 0) {
+            (bool success,) = payable(msg.sender).call{value: amount}("");
+            require(success, "Withdraw failed");
+        }
 
         emit CollateralWithdrawn(msg.sender, amount);
     }
@@ -270,22 +274,16 @@ abstract contract BaseSealedBidAuction is ReentrancyGuard {
     /// @dev Checks if a withdrawal can be performed for `bidder`.
     ///      - It requires that the bidder revealed their bid on time and locks the funds in the contract otherwise.
     ///        This is done to incentivize bidders to always reveal, instead of whitholding if they realize they overbid.
-    ///      - It requires that the bidder is not in the run to win the auction.
     ///      This logic can be customized by overriding this function, to allow for example locked funds to be withdrawn to the seller.
     ///      Or to allow late reveals for bids that were lower than the winner's bid.
     ///      Or to apply a late reveal penalty, but still allow the bidder to withdraw their funds.
+    ///      WARNING: Be careful when overrding, as it can create incentives where bidders don't reveal if they realize they overbid.
     /// @param bidder The address of the bidder to check
     /// @return amount The amount that can be withdrawn
     function _checkWithdrawal(address bidder) internal view virtual returns (uint96) {
         BidInfo storage bid = bids[bidder];
         if (bid.commitHash != bytes20(0)) {
             revert UnrevealedBidError();
-        }
-
-        // TODO: Should we move this to the calling function? Since this is intended to be overriden,
-        //      there's a risk the person overriding this function will forget to check for this.
-        if (bidder == highestBidder) {
-            revert CannotWithdrawError();
         }
 
         uint96 amount = bid.collateral;
