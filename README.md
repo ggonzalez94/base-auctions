@@ -49,10 +49,11 @@ contract MyAuction is EnglishAuction {
     constructor(
         address _seller,
         uint256 _reservePrice,
+        uint256 _startTime,
         uint256 _duration,
         uint256 _extensionThreshold,
         uint256 _extensionPeriod
-    ) EnglishAuction(_seller, _reservePrice, _duration, _extensionThreshold, _extensionPeriod) {}
+    ) EnglishAuction(_seller, _reservePrice, _startTime, _duration, _extensionThreshold, _extensionPeriod) {}
 
     // Here you would normally transfer the actual asset to the winner(e.g. the NFT)
     function _transferAssetToWinner(address winner) internal override {
