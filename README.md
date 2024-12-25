@@ -70,8 +70,8 @@ This project is still in early phases of development. We welcome contributions f
 These are some of the next auctions we plan to implement, but it's very early and we're open to suggestions.
 
 * [x] Dutch Auction
-* [ ] Sealed-Bid Auction
-* [ ] Vickrey Auction (Second-Price Sealed-Bid Auction)
+* [x] Sealed-Bid Auction
+* [x] Vickrey Auction (Second-Price Sealed-Bid Auction)
 * [ ] Reverse Auction
 * [ ] All-pay auction (also known as a Tullock contest)
 * [ ] Support for bidding with ERC20 tokens
