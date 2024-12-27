@@ -29,7 +29,7 @@ abstract contract EnglishAuction {
     address internal immutable seller;
 
     /// @dev Timestamp (in seconds) at which the auction starts
-    uint256 private immutable startTime;
+    uint256 internal immutable startTime;
 
     /// @dev Timestamp (in seconds) at which the auction ends
     uint256 private endTime;
@@ -292,7 +292,7 @@ abstract contract EnglishAuction {
     }
 
     // -------------------------
-    // Internal & Private Functions
+    // Internal hooks
     // -------------------------
 
     /**

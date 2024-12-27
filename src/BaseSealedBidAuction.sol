@@ -22,16 +22,16 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
  */
 abstract contract BaseSealedBidAuction is ReentrancyGuard {
     /// @notice The address of the seller or beneficiary
-    address public immutable seller;
+    address internal immutable seller;
 
     /// @notice The block timestamp at which the auction starts
-    uint256 public immutable startTime;
+    uint256 internal immutable startTime;
 
     /// @notice The block timestamp after which no new commits can be made
-    uint256 public immutable commitDeadline;
+    uint256 internal immutable commitDeadline;
 
     /// @notice The block timestamp after which no new reveals can be made
-    uint256 public immutable revealDeadline;
+    uint256 internal immutable revealDeadline;
 
     /// @dev Info about one bidder’s commit
     /// @param commitHash The hash commitment of a bid value
@@ -298,6 +298,62 @@ abstract contract BaseSealedBidAuction is ReentrancyGuard {
         uint96 amount = bid.collateral;
         return amount;
     }
+
+    // -------------------------
+    // Public View Functions
+    // -------------------------
+    /**
+     * @notice Get the seller address
+     * @return The address of the seller
+     */
+    function getSeller() external view returns (address) {
+        return seller;
+    }
+
+    /**
+     * @notice Get the start time of the auction
+     * @return The start time of the auction
+     */
+    function getStartTime() public view returns (uint256) {
+        return startTime;
+    }
+
+    /**
+     * @notice Get the commit deadline of the auction
+     * @return The commit deadline of the auction
+     */
+    function getCommitDeadline() public view returns (uint256) {
+        return commitDeadline;
+    }
+
+    /**
+     * @notice Get the reveal deadline of the auction
+     * @return The reveal deadline of the auction
+     */
+    function getRevealDeadline() public view returns (uint256) {
+        return revealDeadline;
+    }
+
+    /**
+     * @notice Get the finalized state of the auction
+     * @return True if the auction is finalized, false otherwise
+     */
+    function isFinalized() public view returns (bool) {
+        return finalized;
+    }
+
+    /**
+     * @notice Get the bid info for a bidder
+     * @param bidder The address of the bidder
+     * @return The bid commitment and collateral for the bidder
+     */
+    function getBid(address bidder) public view returns (BidInfo memory) {
+        return bids[bidder];
+    }
+
+    // -------------------------
+    // Internal hooks
+    // -------------------------
 
     /**
      * @dev Called when a bidder reveals their bid. MUST be overridden by the implementing contract.

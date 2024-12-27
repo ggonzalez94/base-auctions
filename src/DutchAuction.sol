@@ -74,16 +74,13 @@ abstract contract DutchAuction is ReentrancyGuard {
     /// @param required The amount of ETH required
     error InsufficientAmount(uint256 sent, uint256 required);
 
-    /// @dev Thrown when attempting to withdraw proceeds when contract balance is zero
-    error NoProceedsAvailable();
-
     /// @dev Thrown when attempting to purchase an invalid quantity of items
     /// @param quantity The requested quantity
     /// @param available The available inventory
     error InvalidQuantity(uint256 quantity, uint256 available);
 
     /// @dev Thrown when trying to withdraw unsold assets before auction has ended
-    error AuctionNotEndedForWithdraw();
+    error AuctionNotEnded();
 
     /// @dev Thrown when trying to withdraw unsold assets when all items were sold
     error NoUnsoldAssetsToWithdraw();
@@ -94,7 +91,7 @@ abstract contract DutchAuction is ReentrancyGuard {
     error FloorPriceExceedsStartPrice(uint256 floorPrice, uint256 startPrice);
 
     /// @dev Thrown when auction duration is set to zero
-    error ZeroDuration();
+    error InvalidDuration();
 
     /// @dev Thrown when start time is set to a past timestamp
     /// @param startTime The specified start time
@@ -102,7 +99,7 @@ abstract contract DutchAuction is ReentrancyGuard {
     error StartTimeInPast(uint256 startTime, uint256 blockTimestamp);
 
     /// @dev Thrown when trying to create an auction with zero items
-    error ZeroInventory();
+    error InvalidInventory();
 
     // -------------------------
     // Modifiers
@@ -136,9 +133,9 @@ abstract contract DutchAuction is ReentrancyGuard {
         uint256 _inventory
     ) {
         if (_floorPrice > _startPrice) revert FloorPriceExceedsStartPrice(_floorPrice, _startPrice);
-        if (_duration == 0) revert ZeroDuration();
+        if (_duration == 0) revert InvalidDuration();
         if (_startTime < block.timestamp) revert StartTimeInPast(_startTime, block.timestamp);
-        if (_inventory == 0) revert ZeroInventory();
+        if (_inventory == 0) revert InvalidInventory();
 
         seller = _seller;
         startPrice = _startPrice;
@@ -189,13 +186,12 @@ abstract contract DutchAuction is ReentrancyGuard {
     /**
      * @notice Send all funds in the contract to the seller.
      * @dev By default, this will send all funds to the seller.
-     *      It is safe to send all funds to the seller, since buyers are refunded immediately if they send excess funds.
+     *      It is safe to send all funds, since items are purchased immediately, so no bids are left outstanding.
      *      Override to implement custom logic if necessary (e.g. sending the funds to a different address or burning them)
      *      When overriding, make sure to add necessary access control.
      */
     function withdrawSellerProceeds() external virtual {
         uint256 amount = address(this).balance;
-        if (amount == 0) revert NoProceedsAvailable();
 
         (bool success,) = payable(seller).call{value: amount}("");
         require(success, "Transfer failed");
@@ -210,7 +206,7 @@ abstract contract DutchAuction is ReentrancyGuard {
      *      When overriding, make sure to add necessary access control.
      */
     function withdrawUnsoldAssets() external virtual {
-        if (!isFinished()) revert AuctionNotEndedForWithdraw();
+        if (!isFinished()) revert AuctionNotEnded();
 
         uint256 remaining = inventory;
         if (remaining == 0) revert NoUnsoldAssetsToWithdraw(); // nothing to withdraw if sold out
@@ -231,7 +227,7 @@ abstract contract DutchAuction is ReentrancyGuard {
     /**
      * @notice Gets the current price per item at the current timestamp.
      * @dev By default, the price is a linear decrease from `startPrice` to `floorPrice` over `duration`.
-     *      Override to implement custom curve if necessary.
+     *      Override to implement custom curve, like exponential decay or even reverse dutch auction(where price starts low and increases over time)
      * @return The current price per item.
      */
     function currentPrice() public view virtual returns (uint256) {
@@ -301,7 +297,7 @@ abstract contract DutchAuction is ReentrancyGuard {
     }
 
     /**
-     * @dev Must be implemented to transfer `quantity` items of the asset to `buyer_`.
+     * @dev MUST be implemented to transfer `quantity` items of the asset to `buyer_`.
      *      It is recommended that assets are escrowed in the contract and transferred to the buyer here.
      *      @param buyer_ The buyer's address
      *      @param quantity The quantity of items to transfer
@@ -309,7 +305,7 @@ abstract contract DutchAuction is ReentrancyGuard {
     function _transferAssetToBuyer(address buyer_, uint256 quantity) internal virtual;
 
     /**
-     * @dev Must be implemented to transfer unsold items back to the seller after the auction ends.
+     * @dev MUST be implemented to transfer unsold items back to the seller after the auction ends.
      * @param seller_ The seller's address
      * @param quantity The quantity of unsold items
      */
