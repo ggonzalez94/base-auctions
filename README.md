@@ -22,7 +22,7 @@ Auctions are everywhere in web3, from NFT sales to liquidations and ICOs, but th
 
 ## Examples
 
-You can find examples of how to use the library in the [examples](examples) folder.
+You can find examples of how to use the library in the [examples](src/examples/Readme.md) folder.
 
 ## Installation
 
