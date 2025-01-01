@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
-import "forge-std/Test.sol";
 import {EnglishAuction} from "../src/EnglishAuction.sol";
+import "forge-std/Test.sol";
 
 ////////////////////////////////////////////////////////////
 // Mock Implementations
@@ -184,7 +184,8 @@ contract EnglishAuctionTest is Test {
 
         // bidder1 should only get refunded for their losing bid
         // not for the second bid(which is the highest bid currently)
-        // A future optimization could allow existing bidders to use funds they already hold in the contract for future bids
+        // A future optimization could allow existing bidders to use funds they already hold in the contract for future
+        // bids
         uint256 bidder1BalanceBefore = bidder1.balance;
         auction.withdrawRefund();
         uint256 bidder1BalanceAfter = bidder1.balance;

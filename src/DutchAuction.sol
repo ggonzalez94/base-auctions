@@ -7,10 +7,21 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
  * @title DutchAuction
  * @notice A Dutch auction selling multiple identical items.
  * @dev
+ * By default the price starts high and decreases over time with a linear curve. But this can be changed by overriding
+ * `currentPrice()` to implement any custom price curve, including a reverse dutch auction(where price starts low and
+ * increases over time).
  * - The price decreases from `startPrice` to `floorPrice` over `duration`.
  * - Buyers can purchase at the current price until inventory = 0 or time runs out.
- * - Once time runs out or inventory hits zero, the auction is considered ended.
+ * - Once time runs out or inventory hits zero, the auction is considered finalized.
  * - If inventory remains after time ends, the seller can reclaim them via `withdrawUnsoldAssets()`.
+ *
+ * To use this contract, you must:
+ * 1. Provide an implementation of `_transferAssetToBuyer(address buyer, uint256 quantity)` that transfers the
+ *    auctioned assets (e.g. NFTs) to the buyer.
+ * 2. Provide an implementation of `_withdrawUnsoldAssets(address seller, uint256 quantity)` that transfers the
+ *    unsold assets back to the seller(if not all assets are sold).
+ * 3. Optionally override `_beforeBuy` or `_afterBuy` to implement custom bidding logic such as
+ *    whitelisting or additional checks.
  */
 abstract contract DutchAuction is ReentrancyGuard {
     /// @dev The address of the seller
@@ -85,11 +96,6 @@ abstract contract DutchAuction is ReentrancyGuard {
     /// @dev Thrown when trying to withdraw unsold assets when all items were sold
     error NoUnsoldAssetsToWithdraw();
 
-    /// @dev Thrown when floor price is set higher than start price
-    /// @param floorPrice The specified floor price
-    /// @param startPrice The specified start price
-    error FloorPriceExceedsStartPrice(uint256 floorPrice, uint256 startPrice);
-
     /// @dev Thrown when auction duration is set to zero
     error InvalidDuration();
 
@@ -132,7 +138,6 @@ abstract contract DutchAuction is ReentrancyGuard {
         uint256 _duration,
         uint256 _inventory
     ) {
-        if (_floorPrice > _startPrice) revert FloorPriceExceedsStartPrice(_floorPrice, _startPrice);
         if (_duration == 0) revert InvalidDuration();
         if (_startTime < block.timestamp) revert StartTimeInPast(_startTime, block.timestamp);
         if (_inventory == 0) revert InvalidInventory();
@@ -187,7 +192,8 @@ abstract contract DutchAuction is ReentrancyGuard {
      * @notice Send all funds in the contract to the seller.
      * @dev By default, this will send all funds to the seller.
      *      It is safe to send all funds, since items are purchased immediately, so no bids are left outstanding.
-     *      Override to implement custom logic if necessary (e.g. sending the funds to a different address or burning them)
+     *      Override to implement custom logic if necessary (e.g. sending the funds to a different address or burning
+     * them)
      *      When overriding, make sure to add necessary access control.
      */
     function withdrawSellerProceeds() external virtual {
@@ -227,7 +233,8 @@ abstract contract DutchAuction is ReentrancyGuard {
     /**
      * @notice Gets the current price per item at the current timestamp.
      * @dev By default, the price is a linear decrease from `startPrice` to `floorPrice` over `duration`.
-     *      Override to implement custom curve, like exponential decay or even reverse dutch auction(where price starts low and increases over time)
+     *      Override to implement custom curve, like exponential decay or even reverse dutch auction(where price starts
+     * low and increases over time)
      * @return The current price per item.
      */
     function currentPrice() public view virtual returns (uint256) {

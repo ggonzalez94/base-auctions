@@ -6,9 +6,11 @@ import "./BaseSealedBidAuction.sol";
 /**
  * @title SecondPriceSealedBidAuction
  * @notice An abstract contract for a second-price sealed-bid auction(Vickrey Auction).
- *         In this format, the highest bidder pays the second-highest bid(or the reserve price if there are no two bids above the reserve price).
+ *         In this format, the highest bidder pays the second-highest bid(or the reserve price if there are no two bids
+ *         above the reserve price).
  * @dev
- *  - Child contracts must still override `_transferAssetToWinner()` and `_returnAssetToSeller()` for handling the transfer of the specific asset.
+ *  - Child contracts must still override `_transferAssetToWinner()` and `_returnAssetToSeller()` for handling the
+ *  transfer of the specific asset.
  *  - Bids below the reserve price do not produce a winner.
  */
 abstract contract SecondPriceSealedBidAuction is BaseSealedBidAuction {
@@ -44,7 +46,8 @@ abstract contract SecondPriceSealedBidAuction is BaseSealedBidAuction {
      */
     function _handleRevealedBid(address bidder, uint96 amount) internal virtual override {
         uint96 currentHighestBid = highestBid;
-        // If the bid is the new highest bid, update highestBid and currentWinner, but also move the old highest bid to secondHighestBid
+        // If the bid is the new highest bid, update highestBid and currentWinner, but also move the old highest bid to
+        // secondHighestBid
         if (amount > currentHighestBid) {
             highestBid = amount;
             currentWinner = bidder;

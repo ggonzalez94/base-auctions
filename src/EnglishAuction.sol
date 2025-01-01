@@ -13,16 +13,21 @@ pragma solidity ^0.8.20;
  * @dev
  * This contract is designed to be inherited and extended.
  * - Optional anti-sniping mechanism: If a bid arrives close to the end, the auction is extended.
- *   If you don't want to extend the auction in the case of a last minute bid, set the `extensionThreshold` or `extensionPeriod` to 0.
+ *   If you don't want to extend the auction in the case of a last minute bid, set the `extensionThreshold` or
+ *  `extensionPeriod` to 0.
  *
  * To use this contract, you must:
  * 1. Provide an implementation of `_transferAssetToWinner(address winner)` that transfers the
  *    auctioned asset (e.g., an NFT) to the auction winner.
- * 2. Optionally override `_beforeBid` or `_afterBid` to implement custom bidding logic such as
+ * 2. Provide an implementation of `_transferAssetToSeller()` that transfers the auctioned asset (e.g., an NFT) to the
+ *    seller in case there's no winner of the auction.
+ * 3. Optionally override `_beforeBid` or `_afterBid` to implement custom bidding logic such as
  *    whitelisting or additional checks.
- * 3. Optionally override `_validateBidIncrement` if you want to require a certain increment over the previous highest bid.
+ * 4. Optionally override `_validateBidIncrement` if you want to require a certain increment over the previous highest
+ * bid.
  *
- * If no valid bids are placed above the reserve price by the time the auction ends, anyone can simply finalize the auction and the asset will be returned to the seller.
+ * If no valid bids are placed above the reserve price by the time the auction ends, anyone can simply finalize the
+ * auction and the asset will be returned to the seller.
  */
 abstract contract EnglishAuction {
     /// @dev The address of the item’s seller
@@ -208,8 +213,10 @@ abstract contract EnglishAuction {
 
     /**
      * @notice Sends proceeds to the seller after the auction has been finalized.
-     * @dev Since `sellerProceeds` is only incremented when the auction is finalized, there's no need to check the status of the auction here.
-     *      Override to implement custom logic if necessary (e.g. sending the funds to a different address or burning them)
+     * @dev Since `sellerProceeds` is only incremented when the auction is finalized, there's no need to check the
+     * status of the auction here.
+     *      Override to implement custom logic if necessary (e.g. sending the funds to a different address or burning
+     * them)
      *      When overriding, make sure to reset the sellerProceeds to 0 and add necessary access control.
      */
     function withdrawSellerProceeds() external virtual {
@@ -222,7 +229,8 @@ abstract contract EnglishAuction {
     }
 
     /**
-     * @notice Finalizes the auction after it ends, transfering the asset to the winner and allowing the seller to withdraw the highest bid.
+     * @notice Finalizes the auction after it ends, transfering the asset to the winner and allowing the seller to
+     * withdraw the highest bid.
      * @dev Anyone can call this after the auction has ended.
      *      If no valid bids above the reserve were placed, no transfer occurs and sellerProceeds remains zero.
      *      You need to override `_transferAssetToWinner` to implement the asset transfer logic.

@@ -8,7 +8,8 @@ import "./BaseSealedBidAuction.sol";
  * @notice An abstract contract for a first-price sealed-bid auction.
  *         In this format, the highest bidder pays their own bid.
  * @dev
- *  - Child contracts must still override `_transferAssetToWinner()` and `_returnAssetToSeller()` for handling the transfer of the specific asset.
+ *  - Child contracts must still override `_transferAssetToWinner()` and `_returnAssetToSeller()` for handling the
+ *  transfer of the specific asset.
  *  - Bids below the reserve price do not produce a winner.
  */
 abstract contract FirstPriceSealedBidAuction is BaseSealedBidAuction {

@@ -7,18 +7,23 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
  * @title BaseSealedBidAuction
  * @notice A base contract for sealed-bid auctions with a commit-reveal scheme and over-collateralization.
  *         Each user has exactly one active bid, which can be overwritten (topped up) before `commitDeadline`.
- *         This contract only handles commit-reveal and overcollateralization logic, and can be used with different auction types.
- *         It is recommended to use one of the child contracts(`FirstPriceSealedBidAuction` or `SecondPriceSealedBidAuction`) instead
- *         of using this contract directly, as they implement the logic for determining the winner, final price, and update the contract state accordingly.
+ *         This contract only handles commit-reveal and overcollateralization logic, and can be used with different
+ *         auction types.
+ *         It is recommended to use one of the child contracts(`FirstPriceSealedBidAuction` or
+ *         `SecondPriceSealedBidAuction`) instead
+ *         of using this contract directly, as they implement the logic for determining the winner, final price, and
+ *         update the contract state accordingly.
  * @dev
  *  Privacy is achieved by hashing the commit and allowing overcollaterilzation.
  *  The contract ensure bidders commit(are not able to back out of their bid) by taking custody fo the funds.
- *  The contract ensures that bidders always reveal their bids, otherwise their funds are stuck(this can be customized by overriding `_checkWithdrawal`)
+ *  The contract ensures that bidders always reveal their bids, otherwise their funds are stuck(this can be customized
+ *  by overriding `_checkWithdrawal`)
  *  - Bidder commits by providing a `commitHash` plus some ETH collateral >= intended bid.
  *  - If they want to raise or change their hidden bid, they call `commitBid` again with a new hash, sending more ETH.
  *  - During reveal, user reveals `(salt, amount)`. If `collateral < amount`, reveal fails.
  *  - Child contracts handle final pricing logic (first-price or second-price).
- *  - This design is heavily inspired by [OverCollateralizedAuction from a16z](https://github.com/a16z/auction-zoo/blob/main/src/sealed-bid/over-collateralized-auction/OverCollateralizedAuction.sol)
+ *  - This design is heavily inspired by [OverCollateralizedAuction from
+ * a16z](https://github.com/a16z/auction-zoo/blob/main/src/sealed-bid/over-collateralized-auction/OverCollateralizedAuction.sol)
  */
 abstract contract BaseSealedBidAuction is ReentrancyGuard {
     /// @notice The address of the seller or beneficiary
@@ -141,12 +146,14 @@ abstract contract BaseSealedBidAuction is ReentrancyGuard {
 
     /**
      * @notice Commit a sealed bid or update an existing commitment with more collateral.
-     * @dev It is strongly recommended that salt is a random value, and the bid is overcollateralized to avoid leaking information about the bid value.
+     * @dev It is strongly recommended that salt is a random value, and the bid is overcollateralized to avoid leaking
+     * information about the bid value.
      *  - Overwrites the old commitHash with the new one (if any).
      *  - Accumulates the new ETH into user’s collateral.
      * @param commitHash The hash commitment to the bid, computed as
      *                   `bytes20(keccak256(abi.encode(salt, bidValue)))`
-     *                   It is strongly recommended that salt is generated offchain, and is a random value, to avoid other actors from guessing the bid value.
+     *                   It is strongly recommended that salt is generated offchain, and is a random value, to avoid
+     * other actors from guessing the bid value.
      */
     function commitBid(bytes20 commitHash) external payable {
         if (block.timestamp < startTime || block.timestamp > commitDeadline) revert NotInCommitPhase();
@@ -170,8 +177,10 @@ abstract contract BaseSealedBidAuction is ReentrancyGuard {
 
     /**
      * @notice Reveal the actual bid.
-     * @dev This function only validates the amount and salt are correct, and updates the amount of unrevealed bids left.
-     *      The logic for determining if the bid is the best(e.g. highest bid for a first-price auction), update the records and handle refunds is handled in the child contract
+     * @dev This function only validates the amount and salt are correct, and updates the amount of unrevealed bids
+     * left.
+     *      The logic for determining if the bid is the best(e.g. highest bid for a first-price auction), update the
+     * records and handle refunds is handled in the child contract
      *      by implementing the `_handleRevealedBid` function.
      * @param salt Random salt used in commit
      * @param bidAmount The actual bid amount user is paying
@@ -272,7 +281,8 @@ abstract contract BaseSealedBidAuction is ReentrancyGuard {
 
     /**
      * @dev Sends funds to the seller after the auction has been finalized.
-     *      Override to implement custom logic if necessary (e.g. sending the funds to a different address or burning them)
+     *      Override to implement custom logic if necessary (e.g. sending the funds to a different address or burning
+     * them)
      * @param amount The amount of proceeds to withdraw.
      */
     function _withdrawSellerProceeds(uint96 amount) internal virtual {
@@ -282,11 +292,14 @@ abstract contract BaseSealedBidAuction is ReentrancyGuard {
 
     /// @dev Checks if a withdrawal can be performed for `bidder`.
     ///      - It requires that the bidder revealed their bid on time and locks the funds in the contract otherwise.
-    ///        This is done to incentivize bidders to always reveal, instead of whitholding if they realize they overbid.
-    ///      This logic can be customized by overriding this function, to allow for example locked funds to be withdrawn to the seller.
+    ///        This is done to incentivize bidders to always reveal, instead of whitholding if they realize they
+    /// overbid.
+    ///      This logic can be customized by overriding this function, to allow for example locked funds to be withdrawn
+    /// to the seller.
     ///      Or to allow late reveals for bids that were lower than the winner's bid.
     ///      Or to apply a late reveal penalty, but still allow the bidder to withdraw their funds.
-    ///      WARNING: Be careful when overrding, as it can create incentives where bidders don't reveal if they realize they overbid.
+    ///      WARNING: Be careful when overrding, as it can create incentives where bidders don't reveal if they realize
+    /// they overbid.
     /// @param bidder The address of the bidder to check
     /// @return amount The amount that can be withdrawn
     function _checkWithdrawal(address bidder) internal view virtual returns (uint96) {
