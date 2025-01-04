@@ -15,7 +15,7 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
  *         update the contract state accordingly.
  * @dev
  *  Privacy is achieved by hashing the commit and allowing overcollaterilzation.
- *  The contract ensure bidders commit(are not able to back out of their bid) by taking custody fo the funds.
+ *  The contract ensure bidders commit(are not able to back out of their bid) by taking custody of the funds.
  *  The contract ensures that bidders always reveal their bids, otherwise their funds are stuck(this can be customized
  *  by overriding `_checkWithdrawal`)
  *  - Bidder commits by providing a `commitHash` plus some ETH collateral >= intended bid.
@@ -140,6 +140,7 @@ abstract contract BaseSealedBidAuction is ReentrancyGuard {
         if (_startTime < block.timestamp || _startTime >= _commitDeadline) revert InvalidStartTime();
 
         seller = _seller;
+        startTime = _startTime;
         commitDeadline = _commitDeadline;
         revealDeadline = _revealDeadline;
     }
@@ -236,13 +237,14 @@ abstract contract BaseSealedBidAuction is ReentrancyGuard {
             // Pay seller
             _withdrawSellerProceeds(finalPrice);
 
-            // Transfer excess collateral to the winner
+            // Transfer excess collateral to the winner.
             uint96 excessCollateral = bids[winner].collateral - finalPrice;
             // Not needed since we don't allow the winner to call `withdrawCollateral`, but just to be safe
             bids[winner].collateral = 0;
             if (excessCollateral > 0) {
+                // We don't revert if the transfer fails to avoid blocking the auction in the case of a non payable
+                // winner contract
                 (bool success,) = payable(winner).call{value: excessCollateral}("");
-                require(success, "Transfer failed");
             }
         } else {
             // No valid winner(no bids revealed or none above reserve)
@@ -257,6 +259,8 @@ abstract contract BaseSealedBidAuction is ReentrancyGuard {
     /// @dev Bidders must reveal their bid before withdrawing - unrevealed bids result in
     ///      locked collateral to enforce reveal participation. This incentive mechanism
     ///      can be customized by overriding `_checkWithdrawal`.
+    /// @dev The winner of the auction is refunded with any excess collateral when the auction ends by anyone calling
+    /// `endAuction()`.
     function withdrawCollateral() external {
         // If `msg.sender` is currently running to win the auction don't allow them to withdraw
         if (msg.sender == currentWinner) {
@@ -292,7 +296,7 @@ abstract contract BaseSealedBidAuction is ReentrancyGuard {
 
     /// @dev Checks if a withdrawal can be performed for `bidder`.
     ///      - It requires that the bidder revealed their bid on time and locks the funds in the contract otherwise.
-    ///        This is done to incentivize bidders to always reveal, instead of whitholding if they realize they
+    ///        This is done to incentivize bidders to always reveal, instead of withholding if they realize they
     /// overbid.
     ///      This logic can be customized by overriding this function, to allow for example locked funds to be withdrawn
     /// to the seller.
@@ -387,6 +391,7 @@ abstract contract BaseSealedBidAuction is ReentrancyGuard {
      * @dev Internal hook that MUST be overridden by the implementing contract to handle
      *      the transfer of assets (e.g., NFTs, custom digital assets) to the auction winner.
      *      This function is called during auction finalization.
+     * @dev Make sure this function does not revert, as it might lock the auction in a non finalized state
      */
     function _transferAssetToWinner(address winner) internal virtual;
 
@@ -394,6 +399,7 @@ abstract contract BaseSealedBidAuction is ReentrancyGuard {
      * @dev Internal hook that MUST be overridden by the implementing contract to handle
      *      the transfer of assets (e.g., NFTs, custom digital assets) to the seller in case there's no winner.
      *      This function is called during auction finalization.
+     * @dev Make sure this function does not revert, as it might lock the auction in a non finalized state
      */
     function _returnAssetToSeller() internal virtual;
 }

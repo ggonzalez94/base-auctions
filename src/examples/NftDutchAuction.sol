@@ -80,18 +80,18 @@ contract NftDutchAuction is ERC721, DutchAuction {
 
     /**
      * @dev Implements the required hook from DutchAuction to transfer unsold items back to the seller.
-     * @param seller The seller's address
+     * @param seller_ The seller's address
      * @param quantity The quantity of unsold NFTs
      *
      * Since some NFTs remain unsold at auction end, we transfer them all to `seller_`.
      */
-    function _withdrawUnsoldAssets(address seller, uint256 quantity) internal override {
+    function _withdrawUnsoldAssets(address seller_, uint256 quantity) internal override {
         // Transfer each remaining NFT to the seller.
         // At this point, nextTokenIdToSell indicates how many were sold.
         // Unsold NFTs are from nextTokenIdToSell to nextTokenIdToSell + quantity - 1.
         for (uint256 i = 0; i < quantity; i++) {
             uint256 tokenIdToTransfer = nextTokenIdToSell + i;
-            _safeTransfer(address(this), seller, tokenIdToTransfer, "");
+            _safeTransfer(address(this), seller_, tokenIdToTransfer, "");
         }
         // Update nextTokenIdToSell is optional since auction ended. But for completeness:
         nextTokenIdToSell += quantity;

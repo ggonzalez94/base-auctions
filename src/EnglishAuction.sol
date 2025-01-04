@@ -40,7 +40,7 @@ abstract contract EnglishAuction {
     uint256 private endTime;
 
     /// @dev The current highest bid amount
-    ///      This is set to the reserve price at constuction time
+    ///      This is set to the reserve price at construction time
     uint256 private highestBid;
 
     /// @dev The address of the highest bidder
@@ -229,7 +229,7 @@ abstract contract EnglishAuction {
     }
 
     /**
-     * @notice Finalizes the auction after it ends, transfering the asset to the winner and allowing the seller to
+     * @notice Finalizes the auction after it ends, transferring the asset to the winner and allowing the seller to
      * withdraw the highest bid.
      * @dev Anyone can call this after the auction has ended.
      *      If no valid bids above the reserve were placed, no transfer occurs and sellerProceeds remains zero.
