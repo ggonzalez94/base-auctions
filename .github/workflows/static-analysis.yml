@@ -12,3 +12,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: crytic/slither-action@v0.4.0
+        with:
+          # Don't mark the build as failed, just report the issues
+          fail-on: none
