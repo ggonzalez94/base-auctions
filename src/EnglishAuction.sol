@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+import "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
+
 /**
  * @title EnglishAuction
  * @notice Implements a standard English auction mechanism for a single asset, with:
@@ -63,6 +65,12 @@ abstract contract EnglishAuction {
     uint256 private immutable extensionThreshold;
     uint256 private immutable extensionPeriod;
 
+    /// @dev Indicates if the auction uses native currency or an ERC20 token (Default as native currency)
+    bool private immutable isNativeCurrency = true;
+
+    /// @dev The ERC20 token used for the auction if `isNativeCurrency` is false
+    IERC20 public erc20Token;
+
     /// @dev Accumulated proceeds for the seller to withdraw after finalization.
     uint256 private sellerProceeds;
 
@@ -70,7 +78,12 @@ abstract contract EnglishAuction {
     /// @param seller The address of the seller.
     /// @param reservePrice The initial reserve price.
     /// @param endTime The scheduled end time of the auction.
-    event AuctionCreated(address indexed seller, uint256 reservePrice, uint256 startTime, uint256 endTime);
+    event AuctionCreated(
+        address indexed seller,
+        uint256 reservePrice,
+        uint256 startTime,
+        uint256 endTime
+    );
 
     /// @notice Emitted when a new highest bid is placed.
     /// @param bidder The address of the new highest bidder.
@@ -125,6 +138,12 @@ abstract contract EnglishAuction {
     /// @dev Thrown when trying to create an auction with a seller address of zero
     error InvalidSeller();
 
+    /// @dev Thrown when trying to place a bid with a different currency than the native currency
+    error OnlyNativeCurrencyBidsAllowed();
+
+    /// @dev Thrown when trying to place a bid with a different currency than the specified ERC20 token
+    error OnlyErc20BidsAllowed();
+
     /// @dev Auction is considered ongoing during [startTime, endTime)
     modifier auctionOngoing() {
         if (block.timestamp < startTime) revert AuctionNotStarted();
@@ -147,7 +166,8 @@ abstract contract EnglishAuction {
         uint256 _startTime,
         uint256 _duration,
         uint256 _extensionThreshold,
-        uint256 _extensionPeriod
+        uint256 _extensionPeriod,
+        address _erc20Token
     ) {
         if (_seller == address(0)) revert InvalidSeller();
         if (_startTime < block.timestamp) revert InvalidStartTime();
@@ -159,6 +179,11 @@ abstract contract EnglishAuction {
         endTime = _startTime + _duration;
         extensionThreshold = _extensionThreshold;
         extensionPeriod = _extensionPeriod;
+
+        if (_erc20Token != address(0)) {
+            erc20Token = IERC20(_erc20Token);
+            isNativeCurrency = false;
+        }
 
         emit AuctionCreated(seller, highestBid, startTime, endTime);
     }
@@ -175,6 +200,8 @@ abstract contract EnglishAuction {
      * @custom:hook `_beforeBid` and `_afterBid` can be overridden for custom logic.
      */
     function placeBid() external payable virtual auctionOngoing {
+        if(!isNativeCurrency) revert OnlyErc20BidsAllowed();
+
         _beforeBid(msg.sender, msg.value);
 
         _validateBidIncrement(msg.value);
@@ -197,6 +224,44 @@ abstract contract EnglishAuction {
         emit NewHighestBid(msg.sender, msg.value);
     }
 
+    function placeErc20Bid(uint256 bidAmount) external virtual auctionOngoing {
+        if(isNativeCurrency) revert OnlyNativeCurrencyBidsAllowed();
+       
+        _beforeBid(msg.sender, bidAmount);
+
+        _validateBidIncrement(bidAmount);
+
+        // Check if the user's allowance for the contract is sufficient for the bid
+        require(
+            erc20Token.allowance(msg.sender, address(this)) >= bidAmount,
+            "Insufficient allowance"
+        );
+
+        bool success = erc20Token.transferFrom(
+            msg.sender,
+            address(this),
+            bidAmount
+        );
+        require(success, "ERC20 transfer failed");
+
+        // Move the old highest bid into a refundable balance
+        if (highestBidder != address(0)) {
+            refunds[highestBidder] += highestBid;
+            emit RefundAvailable(highestBidder, highestBid);
+        }
+
+        // Update highest bid
+        highestBid = bidAmount;
+        highestBidder = msg.sender;
+
+        // Anti-sniping: if we're close to the end, extend the auction
+        _maybeExtendAuction();
+
+        _afterBid(msg.sender, bidAmount);
+
+        emit NewHighestBid(msg.sender, bidAmount);
+    }
+
     /**
      * @notice Withdraw refunds owed to the caller due to being outbid.
      * @dev Reverts if no refund is available.
@@ -205,8 +270,13 @@ abstract contract EnglishAuction {
         uint256 amount = refunds[msg.sender];
         refunds[msg.sender] = 0;
 
-        (bool success,) = payable(msg.sender).call{value: amount}("");
-        require(success, "Transfer failed");
+        if (isNativeCurrency) {
+            (bool success, ) = payable(msg.sender).call{value: amount}("");
+            require(success, "Transfer failed");
+        } else {
+            bool success = erc20Token.transfer(msg.sender, amount);
+            require(success, "ERC20 transfer failed");
+        }
 
         emit FundsWithdrawn(msg.sender, amount);
     }
@@ -223,8 +293,14 @@ abstract contract EnglishAuction {
         uint256 amount = sellerProceeds;
         sellerProceeds = 0;
 
-        (bool success,) = payable(seller).call{value: amount}("");
-        require(success, "Transfer failed");
+        if (isNativeCurrency) {
+            (bool success, ) = payable(seller).call{value: amount}("");
+            require(success, "Transfer failed");
+        } else {
+            bool success = erc20Token.transfer(seller, amount);
+            require(success, "ERC20 transfer failed");
+        }
+
         emit FundsWithdrawn(seller, amount);
     }
 
