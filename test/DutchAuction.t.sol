@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {DutchAuction} from "../src/DutchAuction.sol";
 import "forge-std/Test.sol";
 
@@ -15,8 +16,9 @@ contract MockDutchAuction is DutchAuction {
         uint256 _floorPrice,
         uint256 _startTime,
         uint256 _duration,
-        uint256 _inventory
-    ) DutchAuction(_seller, _startPrice, _floorPrice, _startTime, _duration, _inventory) {
+        uint256 _inventory,
+        address _erc20Token
+    ) DutchAuction(_seller, _startPrice, _floorPrice, _startTime, _duration, _inventory, _erc20Token) {
         // No custom logic needed for now
     }
 
@@ -47,6 +49,8 @@ contract DutchAuctionTest is Test {
     uint256 duration = 1 days;
     uint256 inventory = 50; // 50 identical items
 
+    address erc20Token = address(0x0);
+
     MockDutchAuction auction;
 
     function setUp() external {
@@ -54,7 +58,7 @@ contract DutchAuctionTest is Test {
         vm.warp(startTime);
 
         // Deploy the mock Dutch Auction
-        auction = new MockDutchAuction(seller, startPrice, floorPrice, startTime, duration, inventory);
+        auction = new MockDutchAuction(seller, startPrice, floorPrice, startTime, duration, inventory, erc20Token);
 
         // Give test addresses some ETH
         vm.deal(buyer1, 10 ether);
@@ -196,7 +200,8 @@ contract DutchAuctionTest is Test {
             floorPrice,
             startTime + 1000, // starts 1000 sec in the future
             duration,
-            inventory
+            inventory,
+            erc20Token
         );
 
         vm.startPrank(buyer1);
@@ -230,6 +235,18 @@ contract DutchAuctionTest is Test {
         vm.expectRevert(abi.encodeWithSelector(DutchAuction.InsufficientAmount.selector, 1.5 ether, 2 ether));
         auction.buy{value: 1.5 ether}(2);
     }
+
+    function test_buyWithErc20_RevertWhen_NativeCurrency() external {
+        vm.startPrank(buyer1);
+        vm.expectRevert(abi.encodeWithSelector(DutchAuction.OnlyBuyWithErc20.selector));
+        auction.buyWithErc20(1);
+    }
+
+    function test_buyWithNativeCurrency_RevertWhen_Erc20() external {
+        vm.startPrank(buyer1);
+        vm.expectRevert(abi.encodeWithSelector(DutchAuction.OnlyBuyWithNativeCurrency.selector));
+        auction.buy{value: 1 ether}(1);
+    }   
 
     // // -----------------------------------
     // // Seller Proceeds Tests
