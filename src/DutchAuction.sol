@@ -211,21 +211,24 @@ abstract contract DutchAuction is ReentrancyGuard {
 
         _beforeBuy(msg.sender, quantity, pricePerItem, msg.value);
 
-        // Reduce inventory
         inventory -= quantity;
-
-        // Refund excess ETH
-        uint256 excess = msg.value - totalCost;
-        if (excess > 0) {
-            (bool refundSuccess,) = payable(msg.sender).call{value: excess}("");
-            require(refundSuccess, "Refund failed");
+        
+        _transferAssetToBuyer(msg.sender, quantity);
+        
+        // Handle payments and refunds
+        if (isNativeCurrency) {
+            // Only handle excess refunds for ETH payments
+            uint256 excess = msg.value - totalCost;
+            if (excess > 0) {
+                (bool refundSuccess,) = payable(msg.sender).call{value: excess}("");
+                require(refundSuccess, "Refund failed");
+            }
+        } else {
+            // For ERC20, take exact amount
+            erc20Token.safeTransferFrom(msg.sender, address(this), totalCost);
         }
 
-        // Transfer assets to buyer
-        _transferAssetToBuyer(msg.sender, quantity);
-
         _afterBuy(msg.sender, quantity, pricePerItem, totalCost);
-
         emit Purchased(msg.sender, quantity, totalCost);
     }
 
