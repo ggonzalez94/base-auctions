@@ -24,6 +24,9 @@ Auctions are everywhere in web3, from NFT sales to liquidations and ICOs, but th
 
 You can find examples of how to use the library in the [examples](src/examples/Readme.md) folder.
 
+If you want some help to get started, you can use the amazing wizard UI that one of our community contributors @FavioSauto created: [Auction Wizard](https://base-auctions-wizard.vercel.app/).  
+This will help you generate the code for your auction with a few clicks.
+
 ## Installation
 
 ### Foundry
