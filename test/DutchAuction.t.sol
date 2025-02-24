@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {DutchAuction} from "../src/DutchAuction.sol";
 import "forge-std/Test.sol";
 
@@ -16,9 +15,8 @@ contract MockDutchAuction is DutchAuction {
         uint256 _floorPrice,
         uint256 _startTime,
         uint256 _duration,
-        uint256 _inventory,
-        address _erc20Token
-    ) DutchAuction(_seller, _startPrice, _floorPrice, _startTime, _duration, _inventory, _erc20Token) {
+        uint256 _inventory
+    ) DutchAuction(_seller, _startPrice, _floorPrice, _startTime, _duration, _inventory) {
         // No custom logic needed for now
     }
 
@@ -49,31 +47,19 @@ contract DutchAuctionTest is Test {
     uint256 duration = 1 days;
     uint256 inventory = 50; // 50 identical items
 
-    address erc20Token = address(0x0);
-
     MockDutchAuction auction;
 
-    // Add ERC20 mock
-    MockERC20 mockToken;
-    
     function setUp() external {
         // Warp to a known start time
         vm.warp(startTime);
 
         // Deploy the mock Dutch Auction
-        auction = new MockDutchAuction(seller, startPrice, floorPrice, startTime, duration, inventory, erc20Token);
+        auction = new MockDutchAuction(seller, startPrice, floorPrice, startTime, duration, inventory);
 
         // Give test addresses some ETH
         vm.deal(buyer1, 10 ether);
         vm.deal(buyer2, 10 ether);
         vm.deal(randomUser, 1 ether);
-
-        // Deploy mock ERC20 for token tests
-        mockToken = new MockERC20("Test Token", "TEST");
-        
-        // Mint tokens to buyers for ERC20 tests
-        mockToken.mint(buyer1, 100 ether);
-        mockToken.mint(buyer2, 100 ether);
     }
 
     // -----------------------------------
@@ -210,8 +196,7 @@ contract DutchAuctionTest is Test {
             floorPrice,
             startTime + 1000, // starts 1000 sec in the future
             duration,
-            inventory,
-            erc20Token
+            inventory
         );
 
         vm.startPrank(buyer1);
@@ -246,27 +231,15 @@ contract DutchAuctionTest is Test {
         auction.buy{value: 1.5 ether}(2);
     }
 
-    function test_buyWithErc20_RevertWhen_NativeCurrency() external {
-        vm.startPrank(buyer1);
-        vm.expectRevert(DutchAuction.NativeTokenNotAccepted.selector);
-        auction.buy{value: 1 ether}(1);
-    }
-
-    function test_buyWithNativeCurrency_RevertWhen_NoEth() external {
-        vm.startPrank(buyer1);
-        vm.expectRevert(DutchAuction.NativeTokenRequired.selector);
-        auction.buy(1);
-    }
-
     // // -----------------------------------
     // // Seller Proceeds Tests
     // // -----------------------------------
 
     function test_withdrawSellerProceeds() external {
         // buyer1 buys 2 items at start price
-        uint256 startPrice = auction.currentPrice();
+        uint256 testStartPrice = auction.currentPrice();
         vm.prank(buyer1);
-        auction.buy{value: startPrice * 2}(2);
+        auction.buy{value: testStartPrice * 2}(2);
 
         // buyer2 buys one item after half duration
         vm.warp(startTime + (duration / 2));
@@ -274,15 +247,15 @@ contract DutchAuctionTest is Test {
         uint256 halfDurationPrice = auction.currentPrice();
         auction.buy{value: halfDurationPrice}(1);
 
-        // The contract now has startPrice * 2 + halfDurationPrice ETH. Let seller withdraw
+        // The contract now has testStartPrice * 2 + halfDurationPrice ETH. Let seller withdraw
         uint256 sellerBalBefore = seller.balance;
         vm.expectEmit();
-        emit DutchAuction.FundsWithdrawn(seller, startPrice * 2 + halfDurationPrice);
+        emit DutchAuction.FundsWithdrawn(seller, testStartPrice * 2 + halfDurationPrice);
         auction.withdrawSellerProceeds();
         uint256 sellerBalAfter = seller.balance;
         assertEq(
             sellerBalAfter,
-            sellerBalBefore + startPrice * 2 + halfDurationPrice,
+            sellerBalBefore + testStartPrice * 2 + halfDurationPrice,
             "seller should get the funds in the contract"
         );
     }
@@ -351,127 +324,5 @@ contract DutchAuctionTest is Test {
         // now inventory=0 => revert
         vm.expectRevert(DutchAuction.NoUnsoldAssetsToWithdraw.selector);
         auction.withdrawUnsoldAssets();
-    }
-
-    // Add new tests for ERC20 functionality
-    function test_buyWithERC20() external {
-        // Deploy new auction with ERC20
-        MockDutchAuction erc20Auction = new MockDutchAuction(
-            seller,
-            startPrice,
-            floorPrice,
-            startTime,
-            duration,
-            inventory,
-            address(mockToken)
-        );
-
-        uint256 quantity = 5;
-        uint256 costAtStart = quantity * startPrice;
-
-        vm.startPrank(buyer1);
-        mockToken.approve(address(erc20Auction), costAtStart);
-        
-        vm.expectEmit();
-        emit DutchAuction.Purchased(buyer1, quantity, costAtStart);
-        erc20Auction.buy(quantity);
-
-        // Check token transfers
-        assertEq(mockToken.balanceOf(address(erc20Auction)), costAtStart, "Contract should receive tokens");
-        assertEq(mockToken.balanceOf(buyer1), 100 ether - costAtStart, "Buyer balance should decrease");
-        assertEq(erc20Auction.buyerItemCount(buyer1), quantity, "Buyer should receive items");
-    }
-
-    function test_withdrawSellerProceedsERC20() external {
-        // Deploy new auction with ERC20
-        MockDutchAuction erc20Auction = new MockDutchAuction(
-            seller,
-            startPrice,
-            floorPrice,
-            startTime,
-            duration,
-            inventory,
-            address(mockToken)
-        );
-
-        // Make a purchase first
-        uint256 quantity = 2;
-        uint256 cost = quantity * startPrice;
-        
-        vm.startPrank(buyer1);
-        mockToken.approve(address(erc20Auction), cost);
-        erc20Auction.buy(quantity);
-        vm.stopPrank();
-
-        // Test withdrawal
-        uint256 sellerBalanceBefore = mockToken.balanceOf(seller);
-        
-        vm.expectEmit();
-        emit DutchAuction.FundsWithdrawn(seller, cost);
-        erc20Auction.withdrawSellerProceeds();
-        
-        assertEq(
-            mockToken.balanceOf(seller),
-            sellerBalanceBefore + cost,
-            "Seller should receive tokens"
-        );
-    }
-
-    function test_buy_RevertWhen_InsufficientERC20Balance() external {
-        // Deploy new auction with ERC20
-        MockDutchAuction erc20Auction = new MockDutchAuction(
-            seller,
-            startPrice,
-            floorPrice,
-            startTime,
-            duration,
-            inventory,
-            address(mockToken)
-        );
-
-        uint256 quantity = 5;
-        uint256 cost = quantity * startPrice;
-
-        // Drain buyer's balance
-        vm.startPrank(buyer1);
-        mockToken.transfer(address(0x1), mockToken.balanceOf(buyer1));
-        
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                DutchAuction.InsufficientAmount.selector,
-                0,
-                cost
-            )
-        );
-        erc20Auction.buy(quantity);
-    }
-
-    function test_buy_RevertWhen_InsufficientERC20Allowance() external {
-        // Deploy new auction with ERC20
-        MockDutchAuction erc20Auction = new MockDutchAuction(
-            seller,
-            startPrice,
-            floorPrice,
-            startTime,
-            duration,
-            inventory,
-            address(mockToken)
-        );
-
-        uint256 quantity = 5;
-        
-        vm.startPrank(buyer1);
-        // Don't approve tokens
-        vm.expectRevert("ERC20: insufficient allowance");
-        erc20Auction.buy(quantity);
-    }
-}
-
-// Add Mock ERC20 contract for testing
-contract MockERC20 is ERC20 {
-    constructor(string memory name, string memory symbol) ERC20(name, symbol) {}
-
-    function mint(address to, uint256 amount) external {
-        _mint(to, amount);
     }
 }

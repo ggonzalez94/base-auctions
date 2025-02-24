@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 /**
@@ -26,8 +24,6 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
  *    whitelisting or additional checks.
  */
 abstract contract DutchAuction is ReentrancyGuard {
-    using SafeERC20 for IERC20;
-
     /// @dev The address of the seller
     address internal immutable seller;
 
@@ -43,14 +39,8 @@ abstract contract DutchAuction is ReentrancyGuard {
     /// @dev The lowest possible price at the end of `duration`
     uint256 internal immutable floorPrice;
 
-    /// @dev Indicates if the auction uses native currency or an ERC20 token (Default as native currency)
-    bool private immutable isNativeCurrency = true;
-
-    /// @dev The ERC20 token used for the auction if `isNativeCurrency` is false
-    IERC20 public erc20Token;
-
     /// @dev The number of identical items available for sale
-    uint256 private inventory;
+    uint256 internal inventory;
 
     /// @notice Emitted when a new auction is started
     /// @param seller The address of the seller
@@ -117,13 +107,6 @@ abstract contract DutchAuction is ReentrancyGuard {
     /// @dev Thrown when trying to create an auction with zero items
     error InvalidInventory();
 
-
-    /// @dev Thrown when trying to send ETH for an ERC20 auction
-    error NativeTokenNotAccepted();
-
-    /// @dev Thrown when trying to send no ETH for a native currency auction
-    error NativeTokenRequired();
-
     // -------------------------
     // Modifiers
     // -------------------------
@@ -132,16 +115,6 @@ abstract contract DutchAuction is ReentrancyGuard {
     modifier auctionActive() {
         if (block.timestamp < startTime) revert AuctionNotStarted();
         if (isFinished()) revert AuctionEnded();
-        _;
-    }
-
-    /// @dev Reverts if the payment currency doesn't match the auction's configuration
-    modifier revertIfInvalidCurrency() {
-        if (isNativeCurrency) {
-            if (msg.value == 0) revert NativeTokenRequired();
-        } else {
-            if (msg.value > 0) revert NativeTokenNotAccepted();
-        }
         _;
     }
 
@@ -163,8 +136,7 @@ abstract contract DutchAuction is ReentrancyGuard {
         uint256 _floorPrice,
         uint256 _startTime,
         uint256 _duration,
-        uint256 _inventory,
-        address _erc20Token
+        uint256 _inventory
     ) {
         if (_duration == 0) revert InvalidDuration();
         if (_startTime < block.timestamp) revert StartTimeInPast(_startTime, block.timestamp);
@@ -176,11 +148,6 @@ abstract contract DutchAuction is ReentrancyGuard {
         startTime = _startTime;
         duration = _duration;
         inventory = _inventory;
-
-        if (_erc20Token != address(0)) {
-            isNativeCurrency = false;
-            erc20Token = IERC20(_erc20Token);
-        }
 
         emit AuctionCreated(seller, startPrice, floorPrice, startTime, duration, inventory);
     }
@@ -195,40 +162,29 @@ abstract contract DutchAuction is ReentrancyGuard {
      *      If more ETH than required is sent, excess is refunded.
      * @param quantity The number of items to buy
      */
-    function buy(uint256 quantity) external payable auctionActive nonReentrant revertIfInvalidCurrency {        
+    function buy(uint256 quantity) external payable virtual auctionActive nonReentrant {
         if (quantity == 0 || quantity > inventory) revert InvalidQuantity(quantity, inventory);
 
         uint256 pricePerItem = currentPrice();
         uint256 totalCost = pricePerItem * quantity;
-        if (isNativeCurrency) {
-            if (msg.value < totalCost) revert InsufficientAmount(msg.value, totalCost);
-        } else {
-            if (erc20Token.balanceOf(msg.sender) < totalCost) revert InsufficientAmount(
-                erc20Token.balanceOf(msg.sender),
-                totalCost
-            );
-        }
+        if (msg.value < totalCost) revert InsufficientAmount(msg.value, totalCost);
 
         _beforeBuy(msg.sender, quantity, pricePerItem, msg.value);
 
+        // Reduce inventory
         inventory -= quantity;
-        
-        _transferAssetToBuyer(msg.sender, quantity);
-        
-        // Handle payments and refunds
-        if (isNativeCurrency) {
-            // Only handle excess refunds for ETH payments
-            uint256 excess = msg.value - totalCost;
-            if (excess > 0) {
-                (bool refundSuccess,) = payable(msg.sender).call{value: excess}("");
-                require(refundSuccess, "Refund failed");
-            }
-        } else {
-            // For ERC20, take exact amount
-            erc20Token.safeTransferFrom(msg.sender, address(this), totalCost);
+
+        uint256 excess = msg.value - totalCost;
+        if (excess > 0) {
+            (bool refundSuccess,) = payable(msg.sender).call{value: excess}("");
+            require(refundSuccess, "Refund failed");
         }
 
+        // Transfer assets to buyer
+        _transferAssetToBuyer(msg.sender, quantity);
+
         _afterBuy(msg.sender, quantity, pricePerItem, totalCost);
+
         emit Purchased(msg.sender, quantity, totalCost);
     }
 
@@ -243,13 +199,8 @@ abstract contract DutchAuction is ReentrancyGuard {
     function withdrawSellerProceeds() external virtual {
         uint256 amount = address(this).balance;
 
-        if (isNativeCurrency) {
-            (bool success,) = payable(seller).call{value: amount}("");
-            require(success, "Transfer failed");
-        } else {
-            bool success = erc20Token.transfer(seller, amount);
-            require(success, "Transfer failed");
-        }
+        (bool success,) = payable(seller).call{value: amount}("");
+        require(success, "Transfer failed");
 
         emit FundsWithdrawn(seller, amount);
     }
