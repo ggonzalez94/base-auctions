@@ -40,7 +40,7 @@ abstract contract DutchAuction is ReentrancyGuard {
     uint256 internal immutable floorPrice;
 
     /// @dev The number of identical items available for sale
-    uint256 private inventory;
+    uint256 internal inventory;
 
     /// @notice Emitted when a new auction is started
     /// @param seller The address of the seller
@@ -162,7 +162,7 @@ abstract contract DutchAuction is ReentrancyGuard {
      *      If more ETH than required is sent, excess is refunded.
      * @param quantity The number of items to buy
      */
-    function buy(uint256 quantity) external payable auctionActive nonReentrant {
+    function buy(uint256 quantity) external payable virtual auctionActive nonReentrant {
         if (quantity == 0 || quantity > inventory) revert InvalidQuantity(quantity, inventory);
 
         uint256 pricePerItem = currentPrice();

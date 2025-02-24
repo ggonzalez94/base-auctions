@@ -237,9 +237,9 @@ contract DutchAuctionTest is Test {
 
     function test_withdrawSellerProceeds() external {
         // buyer1 buys 2 items at start price
-        uint256 startPrice = auction.currentPrice();
+        uint256 testStartPrice = auction.currentPrice();
         vm.prank(buyer1);
-        auction.buy{value: startPrice * 2}(2);
+        auction.buy{value: testStartPrice * 2}(2);
 
         // buyer2 buys one item after half duration
         vm.warp(startTime + (duration / 2));
@@ -247,15 +247,15 @@ contract DutchAuctionTest is Test {
         uint256 halfDurationPrice = auction.currentPrice();
         auction.buy{value: halfDurationPrice}(1);
 
-        // The contract now has startPrice * 2 + halfDurationPrice ETH. Let seller withdraw
+        // The contract now has testStartPrice * 2 + halfDurationPrice ETH. Let seller withdraw
         uint256 sellerBalBefore = seller.balance;
         vm.expectEmit();
-        emit DutchAuction.FundsWithdrawn(seller, startPrice * 2 + halfDurationPrice);
+        emit DutchAuction.FundsWithdrawn(seller, testStartPrice * 2 + halfDurationPrice);
         auction.withdrawSellerProceeds();
         uint256 sellerBalAfter = seller.balance;
         assertEq(
             sellerBalAfter,
-            sellerBalBefore + startPrice * 2 + halfDurationPrice,
+            sellerBalBefore + testStartPrice * 2 + halfDurationPrice,
             "seller should get the funds in the contract"
         );
     }
